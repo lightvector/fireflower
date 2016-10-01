@@ -1,0 +1,10 @@
+.classpath
+.project
+.settings/
+.cache-main
+project/target/
+project/project/
+target/
+bin/
+.ensime_cache
+src/main/scala/*.class
