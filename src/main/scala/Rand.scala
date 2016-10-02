@@ -3,16 +3,20 @@ package fireflower
 /** Rand
   * A simple class for random number generation, independent of the scala or java built-in random. High-period and high-quality.
   */
-class Rand(seeds: Array[Long]) {
-  def this(seed: Long) = this(Array(seed))
-  def this() = this(RandUtils.makeSeedsFromTime("Rand",2))
+object Rand {
+  def apply(): Rand = new Rand(RandUtils.makeSeedsFromTime("Rand",2))
+  def apply(seed: Long) = new Rand(Array(seed))
+  def apply(seeds: Array[Long]) = new Rand(seeds)
+}
 
+class Rand private (seeds: Array[Long]) {
   val seed = seeds.map(_.toString).mkString("|")
 
   val xoro = new Xoroshiro128plus(seed)
   val xors = new XorShift1024Mult(seed)
+  val pcg = new PCG32(seed)
 
-  def nextLong(): Long = xoro.next() ^ xors.next()
+  def nextLong(): Long = (xoro.next() ^ xors.next()) + pcg.next()
   def nextInt(): Int = nextLong.toInt
   def nextInt(n: Int): Int = {
     if(n <= 0) throw new Exception("Rand.nextInt(n): non-positive n: " + n)
@@ -26,6 +30,15 @@ class Rand(seeds: Array[Long]) {
   }
 
   def nextDouble(): Double = (nextLong() & 0x1FFFFFFFFFFFFFL) / (1L << 53).toDouble
+
+  def shuffle[T](arr: Array[T]): Unit = {
+    for(i <- 1 to (arr.length-1)) {
+      val j = nextInt(i+1)
+      val tmp = arr(i)
+      arr(i) = arr(j)
+      arr(j)= tmp
+    }
+  }
 }
 
 
@@ -39,10 +52,11 @@ trait LongGen {
 
 //xoroshiro128plus from http://xoroshiro.di.unimi.it/
 //Initial values must be not both zero
+//Period = 2^128 - 1
 class Xoroshiro128plus(initX0: Long, initX1: Long) extends LongGen {
 
   private def this(longs: Array[Long]) = this(longs(0),longs(1))
-  def this(seed: String) = this(RandUtils.makeSeedsFromSeed("Xoroshiro128plus",seed,2))
+  def this(seed: String) = this(RandUtils.makeNonzeroSeedsFromSeed("Xoroshiro128plus",seed,2))
 
   private var x0: Long = initX0
   private var x1: Long = initX1
@@ -65,12 +79,13 @@ class Xoroshiro128plus(initX0: Long, initX1: Long) extends LongGen {
 
 //xorshift1024* from http://xoroshiro.di.unimi.it/
 //Not all values should be zero
+//Period = 2^1024 - 1
 class XorShift1024Mult(initS: Array[Long]) extends LongGen {
   val len: Int = 16
   if(initS.length != len)
     throw new Exception("XorShift1024Mult initialized with array initS of length != 16")
 
-  def this(seed: String) = this(RandUtils.makeSeedsFromSeed("XorShift1024Mult",seed,16))
+  def this(seed: String) = this(RandUtils.makeNonzeroSeedsFromSeed("XorShift1024Mult",seed,16))
 
   private var s: Array[Long] = initS.clone
   private var idx: Int = 0
@@ -83,6 +98,27 @@ class XorShift1024Mult(initS: Array[Long]) extends LongGen {
     s(idx) = s1 ^ s0 ^ (s1 >>> 11) ^ (s0 >>> 30)
 
     s(idx) * 1181783497276652981L
+  }
+}
+
+//PCG Generator from http://www.pcg-random.org/
+//Period = 2^64
+class PCG32(initS: Long) extends LongGen {
+  def this(seed: String) = this(RandUtils.makeNonzeroSeedsFromSeed("PCG32",seed,1)(0))
+
+  private var s: Long = initS
+
+  def nextInt(): Int = {
+    s = s * 6364136223846793005L + 1442695040888963407L
+    val x: Int = (((s >>> 18) ^ s) >>> 27).toInt
+    val rot: Int = (s >>> 59).toInt
+    (x >>> rot) | (x << (32-rot))
+  }
+
+  def next(): Long = {
+    val low = nextInt()
+    val high = nextInt()
+    (low.toLong & 0xFFFFFFFFL) ^ (high.toLong << 32)
   }
 }
 
@@ -119,16 +155,23 @@ object RandUtils {
     bytesToLongs(bytes.toArray).slice(0,num)
   }
 
-  def makeSeedsFromSeed(salt: String, seed: String, num: Int): Array[Long] = {
+  def makeNonzeroSeedsFromSeed(salt: String, seed: String, num: Int): Array[Long] = {
     val len = (num + 3) / 4 //divide rounded up
     val hashsalt = sha256(salt)
-    val bytes: Seq[Byte] = (0 to (len-1)).flatMap { i =>
-      val hashStr = "fromseed:" + i + ":" + hashsalt + ":" + seed
-      sha256Bytes(hashStr)
-    }
-    bytesToLongs(bytes.toArray).slice(0,num)
-  }
 
+    def loop(tries: Int): Array[Long] = {
+      val bytes: Seq[Byte] = (0 to (len-1)).flatMap { i =>
+        val hashStr = "fromseed:" + tries + ":" + i + ":" + hashsalt + ":" + seed
+        sha256Bytes(hashStr)
+      }
+      val result = bytesToLongs(bytes.toArray).slice(0,num)
+      if(result.exists { x => x != 0 })
+        result
+      else
+        loop(tries+1)
+    }
+    loop(0)
+  }
 }
 
 
@@ -155,13 +198,19 @@ object RandTest {
       5421263376768154227L
     ))
 
-    //First value should be 2059148541540170003
-    //Last value should be -6554276272757038638
-    for(i <- 1 to 150) println("Xoroshiro128plus: " + i + " " + xoro.next())
+    val pcg = new PCG32(123)
 
-    //First value should be 8401261496608040035
-    //Last value should be -455476108018926596
-    for(i <- 1 to 150) println("Xorshift1024mult: " + i + " " + xorm.next())
+    //First value should be 1c9390b04e43f913
+    //Last value should be  a50a8874ba8ba1d2
+    for(i <- 1 to 150) println("Xoroshiro128plus: " + i + " " + xoro.next().toHexString)
+
+    //First value should be 749746d1c27d2463
+    //Last value should be  f9add2e499dabbfc
+    for(i <- 1 to 150) println("Xorshift1024mult: " + i + " " + xorm.next().toHexString)
+
+    //First value should be 65fdd305b3766cbd
+    //Last value should be  e4aef6a6d6858d66
+    for(i <- 1 to 150) println("PCG32: " + i + " " + pcg.next().toHexString)
 
     //Should be: EF537F25C895BFA782526529A9B63D97AA631564D5D789C2B765448C8635FB6C
     println("SHA256: " + RandUtils.sha256("The quick brown fox jumps over the lazy dog."))
@@ -169,7 +218,7 @@ object RandTest {
     println("SHA256Longs(0): " + RandUtils.bytesToLongs(RandUtils.sha256Bytes("The quick brown fox jumps over the lazy dog."))(0).toHexString)
 
     println("Some random numbers:")
-    val rand: Rand = new Rand()
+    val rand: Rand = Rand()
     for(i <- 1 to 10)
       println(rand.nextInt() + " " + rand.nextLong() + " " + rand.nextInt(10) + " " + rand.nextDouble())
   }
