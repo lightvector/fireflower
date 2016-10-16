@@ -5,24 +5,32 @@ object Main {
   def main(args: Array[String]): Unit = {
     //println("Hello world!")
     //RandTest.test()
-    val rand = Rand()
-    val gameSeed = rand.nextLong()
-    //val gameSeed = 8411726411147478630L
-    val playerSeed = gameSeed
-    println("GameSeed: " + gameSeed + " PlayerSeed: " + playerSeed)
 
     val rules = Rules.StandardTwoPlayer
 
-    Sim.run(
+    // Sim.runSingle(
+    //   rules = rules,
+    //   players = (playerSeed => Array(
+    //     new RandomPlayer(playerSeed,0,rules),
+    //     new RandomPlayer(playerSeed,1,rules)
+    //   )),
+    //   doPrint = true,
+    //   useAnsiColors = true
+    // )
+
+    val _games = Sim.runMulti(
       rules = rules,
-      gameSeed = gameSeed,
-      playerSeed = playerSeed,
-      players = Array(
+      reps = 10000,
+      runSeed = 0L,
+      players = (playerSeed => Array(
         new RandomPlayer(playerSeed,0,rules),
         new RandomPlayer(playerSeed,1,rules)
-      ),
+      )),
       doPrint = true,
+      doPrintDetails = false,
       useAnsiColors = true
     )
+
   }
+
 }
