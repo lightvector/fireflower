@@ -69,6 +69,8 @@ class Game private (
   val revHistory: List[SeenAction]
 ) {
 
+  val possibleHintTypes = rules.possibleHintTypes()
+
   def isLegal(ga: GiveAction): Boolean = {
     ga match {
       case GiveDiscard(hid) =>
@@ -76,7 +78,9 @@ class Game private (
       case GivePlay(hid) =>
         hid >= 0 && hid < hands(curPlayer).numCards
       case GiveHint(pid,hint) =>
-        numHints > 0 && hands(pid).exists { cid => cid != CardId.NULL && rules.hintApplies(hint,seenMap(cid)) }
+        numHints > 0 &&
+        possibleHintTypes.exists { ht => hint == ht } &&
+        hands(pid).exists { cid => cid != CardId.NULL && rules.hintApplies(hint,seenMap(cid)) }
     }
   }
 

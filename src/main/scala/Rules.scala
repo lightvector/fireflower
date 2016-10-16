@@ -50,7 +50,7 @@ object Rules {
     }
 
     val maxScore = 25
-    val maxNumber = 5
+    val maxNumber = 4
 
     val colorList: List[Color] = List(Red,Yellow,Green,Blue,White)
     val maxColorId = colorList.map(color => color.id).reduceLeft(math.max)
@@ -60,11 +60,11 @@ object Rules {
     }
 
     def cards(): Array[Card] = {
-      (0 to 4).flatMap { number =>
+      (0 to maxNumber).flatMap { number =>
         colorList.flatMap { color =>
           if(number == 0)
             List(Card(color,number),Card(color,number),Card(color,number))
-          else if(number < 4)
+          else if(number < maxNumber)
             List(Card(color,number),Card(color,number))
           else
             List(Card(color,number))
@@ -74,11 +74,11 @@ object Rules {
 
     def possibleHintTypes(): Array[GiveHintType] = {
       colorList.map(color => HintColor(color)).toArray[GiveHintType] ++
-        (1 to maxNumber).map(number => HintNumber(number)).toArray[GiveHintType]
+        (0 to maxNumber).map(number => HintNumber(number)).toArray[GiveHintType]
     }
 
     def extraHintFromPlaying(num: Int): Boolean = {
-      num == 4
+      num == maxNumber
     }
 
     def seenHint(hint: GiveHintType): SeenHintType = {

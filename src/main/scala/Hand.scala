@@ -22,7 +22,12 @@ class Hand private (
   }
 
   def add(cid: CardId): Unit = {
-    cards(numCards) = cid
+    var i = numCards
+    while(i > 0) {
+      cards(i) = cards(i-1)
+      i -= 1
+    }
+    cards(0) = cid
     numCards += 1
   }
 
