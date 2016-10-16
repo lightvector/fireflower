@@ -30,20 +30,20 @@ package fireflower
   // [info] Average Utility: 1.3992
 
 
-class RandomPlayer(val seed: Long, val pid: Int, val rules: Rules) extends Player {
-  val rand = Rand(Array(seed,pid.toLong))
+class RandomPlayer(val seed: Long, val myPid: Int, val rules: Rules) extends Player {
+  val rand = Rand(Array(seed,myPid.toLong))
   val possibleHintTypes: Array[GiveHintType] = rules.possibleHintTypes()
 
-  def handleGameStart(game: Game): Unit = {
+  def handleGameStart(game: Game): Unit = {}
+  def handleSeenAction(preGame: Game, sa: SeenAction, postGame: Game): Unit = {}
 
-  }
   def getAction(game: Game): GiveAction = {
     rand.nextInt(5) match {
       case 0 =>
-        GivePlay(rand.nextInt(game.hands(pid).numCards))
+        GivePlay(rand.nextInt(game.hands(myPid).numCards))
       case 1 | 2 =>
         if(game.numHints < rules.maxHints)
-          GiveDiscard(rand.nextInt(game.hands(pid).numCards))
+          GiveDiscard(rand.nextInt(game.hands(myPid).numCards))
         else
           getAction(game)
       case 3 | 4 =>
@@ -51,10 +51,10 @@ class RandomPlayer(val seed: Long, val pid: Int, val rules: Rules) extends Playe
           getAction(game)
         else {
           var hintPid = rand.nextInt(rules.numPlayers-1)
-          if(hintPid >= pid)
+          if(hintPid >= myPid)
             hintPid += 1
           var hintType = possibleHintTypes(rand.nextInt(possibleHintTypes.length))
-          while(!game.hands(hintPid).exists { cid => rules.hintApplies(hintType, game.cardMap(cid)) })
+          while(!game.hands(hintPid).exists { cid => rules.hintApplies(hintType, game.seenMap(cid)) })
             hintType = possibleHintTypes(rand.nextInt(possibleHintTypes.length))
           GiveHint(hintPid, hintType)
         }

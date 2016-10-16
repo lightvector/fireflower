@@ -9,6 +9,9 @@ object Sim {
     doPrint: Boolean,
     useAnsiColors: Boolean
   ): Game = {
+    if(players.length != rules.numPlayers)
+      throw new Exception("players.length (%d) != rules.numPlayers (%d)".format(players.length,rules.numPlayers))
+
     if(doPrint)
       println("GameSeed: " + gameSeed + " PlayerSeed: " + playerSeed)
 
@@ -26,10 +29,14 @@ object Sim {
         throw new Exception("Illegal action: " + game.giveActionToString(ga))
       }
       else {
+        val preGame = Game(game)
         val sa = game.seenAction(ga)
         if(doPrint)
           println(game.toString(useAnsiColors) + "  " + game.seenActionToString(sa,useAnsiColors))
         game.doAction(ga)
+        for(pid <- 0 to (players.length - 1)) {
+          players(pid).handleSeenAction(preGame.hiddenFor(pid), sa, game.hiddenFor(pid))
+        }
       }
     }
 

@@ -26,6 +26,30 @@ If during a compile in SBT you encounter the error `filename too long` or simila
 
 http://stackoverflow.com/questions/28565837/filename-too-long-sbt
 
+## Code Overview
+
+A quick overview of what files in src/main/scala/ contain what, in approximately dependency order:
+* Infrastructure
+  * RichTypes.scala - convenience functions
+  * Rand.scala - basic system-independent random number generator
+* Game Implementation
+  * CommonTypes.scala - some simple types and type aliases
+  * Color.scala - defines Color type for colors of Hanabi cards
+  * Card.scala - defines Card type for Hanabi cards
+  * Actions.scala - defines types for hints and actions
+  * Rules.scala - defines the possible Hanabi rule sets and game parameters
+  * Hand.scala - a simple mutable container for storing a player's hand.
+  * SeenMap.scala - a mapping that stores the mapping of cardIds to cards based on what cards have been seen or not
+  * Game.scala - the main game implementation and rules
+  * Player.scala - interface that players of the game need to satisfy
+  * Sim.scala - functions to actually run the game with a group of players
+* Player Implementation
+  * CardPropertyMap.scala - data structure to remember properties of cards, used in implementation of AI players
+  * RandomPlayer.scala - a player that plays randomly
+  * HeuristicPlayer.scala - a player that plays via hardcoded rules and heuristics, with no search or modeling
+* Main
+  * Main.scala - top level driver, runs the program
+
 ## Contributors
 
 * David Wu

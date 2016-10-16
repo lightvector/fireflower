@@ -4,12 +4,9 @@ import RichImplicits._
 
 object Game {
   def apply(rules: Rules, seed: Long): Game = {
-    val cardMap = CardMap(rules,Rand(seed))
-    val numCardRemaining = Array.fill(rules.maxNumber * (rules.maxColorId+1))(0)
-    cardMap.cards.foreach { card =>
-      val lookupIdx = cardLookupIdx(card,rules)
-      numCardRemaining(lookupIdx) += 1
-    }
+    val seenMap = SeenMap(rules,Rand(seed))
+    val numCardRemaining = Array.fill(Card.maxArrayIdx)(0)
+    seenMap.cards.foreach { card => numCardRemaining(card.arrayIdx) += 1 }
     new Game(
       rules = rules,
       turnNumber = 0,
@@ -17,21 +14,17 @@ object Game {
       numBombs = 0,
       numPlayed = 0,
       numDiscarded = 0,
-      cardMap = cardMap,
+      seenMap = seenMap,
       played = List(),
       discarded = List(),
       deck = (0 to (rules.deckSize-1)).toList,
       curPlayer = 0,
       finalTurnsLeft = -1,
       hands = Array.fill(rules.numPlayers)(Hand(rules.handSize)),
-      nextPlayable = Array.fill(rules.maxColorId+1)(1),
+      nextPlayable = Array.fill(Color.LIMIT)(0),
       numCardRemaining = numCardRemaining,
       revHistory = List()
     )
-  }
-
-  private def cardLookupIdx(card: Card, rules: Rules): Int = {
-    card.number - 1 + rules.maxNumber * card.color.id
   }
 
   def apply(that: Game): Game = {
@@ -42,7 +35,7 @@ object Game {
       numBombs = that.numBombs,
       numPlayed = that.numPlayed,
       numDiscarded = that.numDiscarded,
-      cardMap = CardMap(that.cardMap),
+      seenMap = SeenMap(that.seenMap),
       played = that.played,
       discarded = that.discarded,
       deck = that.deck,
@@ -64,7 +57,7 @@ class Game private (
   var numBombs: Int,
   var numPlayed: Int,
   var numDiscarded: Int,
-  var cardMap: CardMap,
+  var seenMap: SeenMap,
   var played: List[CardId],
   var discarded: List[CardId],
   var deck: List[CardId],
@@ -76,10 +69,6 @@ class Game private (
   val revHistory: List[SeenAction]
 ) {
 
-  private def cardLookupIdx(card: Card): Int = {
-    Game.cardLookupIdx(card,rules)
-  }
-
   def isLegal(ga: GiveAction): Boolean = {
     ga match {
       case GiveDiscard(hid) =>
@@ -87,7 +76,7 @@ class Game private (
       case GivePlay(hid) =>
         hid >= 0 && hid < hands(curPlayer).numCards
       case GiveHint(pid,hint) =>
-        numHints > 0 && hands(pid).exists { cid => cid != CardId.NULL && rules.hintApplies(hint,cardMap(cid)) }
+        numHints > 0 && hands(pid).exists { cid => cid != CardId.NULL && rules.hintApplies(hint,seenMap(cid)) }
     }
   }
 
@@ -95,12 +84,12 @@ class Game private (
     ga match {
       case GiveDiscard(hid) => SeenDiscard(hid,hands(curPlayer)(hid))
       case GivePlay(hid) =>
-        if(isPlayable(cardMap(hands(curPlayer)(hid))))
+        if(isPlayable(seenMap(hands(curPlayer)(hid))))
           SeenPlay(hid,hands(curPlayer)(hid))
         else
           SeenBomb(hid,hands(curPlayer)(hid))
       case GiveHint(pid,hint) =>
-        val appliedTo = hands(pid).mapCards { cid => cid != CardId.NULL && rules.hintApplies(hint,cardMap(cid)) }
+        val appliedTo = hands(pid).mapCards { cid => cid != CardId.NULL && rules.hintApplies(hint,seenMap(cid)) }
         SeenHint(pid,rules.seenHint(hint),appliedTo)
     }
   }
@@ -118,15 +107,15 @@ class Game private (
         numHints += 1
         numDiscarded += 1
         discarded = cid :: discarded
-        val card = cardMap(cid)
-        val lookupIdx = cardLookupIdx(card)
-        if(numCardRemaining(lookupIdx) > 0)
-          numCardRemaining(lookupIdx) -= 1
+        val card = seenMap(cid)
+        val cardArrayIdx = card.arrayIdx
+        if(numCardRemaining(cardArrayIdx) > 0)
+          numCardRemaining(cardArrayIdx) -= 1
       case GivePlay(hid) =>
         val cid = hands(curPlayer).remove(hid)
         shouldDraw = true
 
-        val card = cardMap(cid)
+        val card = seenMap(cid)
         if(isPlayable(card)) {
           numPlayed += 1
           nextPlayable(card.color.id) += 1
@@ -134,16 +123,16 @@ class Game private (
           if(rules.extraHintFromPlaying(card.number))
             numHints = Math.min(numHints+1,rules.maxHints)
 
-          val lookupIdx = cardLookupIdx(card)
-          numCardRemaining(lookupIdx) = -1
+          val cardArrayIdx = card.arrayIdx
+          numCardRemaining(cardArrayIdx) = -1
         }
         else {
           numDiscarded += 1
           numBombs += 1
           discarded = cid :: discarded
-          val lookupIdx = cardLookupIdx(card)
-          if(numCardRemaining(lookupIdx) > 0)
-            numCardRemaining(lookupIdx) -= 1
+          val cardArrayIdx = card.arrayIdx
+          if(numCardRemaining(cardArrayIdx) > 0)
+            numCardRemaining(cardArrayIdx) -= 1
         }
       case GiveHint(_,_) =>
         numHints -= 1
@@ -167,17 +156,17 @@ class Game private (
     turnNumber += 1
   }
 
-  def replaceCardMap(newCardMap: CardMap): Unit = {
-    cardMap = newCardMap
+  def replaceSeenMap(newSeenMap: SeenMap): Unit = {
+    seenMap = newSeenMap
   }
 
   def hideDeck(): Unit = {
-    deck.foreach { cid => cardMap(cid) = Card.NULL }
+    deck.foreach { cid => seenMap(cid) = Card.NULL }
   }
 
   def hideFor(pid: PlayerId): Unit = {
-    deck.foreach { cid => cardMap(cid) = Card.NULL }
-    hands(pid).foreach { cid => if(cid != CardId.NULL) cardMap(cid) = Card.NULL }
+    deck.foreach { cid => seenMap(cid) = Card.NULL }
+    hands(pid).foreach { cid => if(cid != CardId.NULL) seenMap(cid) = Card.NULL }
   }
 
   def hiddenFor(pid: PlayerId): Game = {
@@ -207,8 +196,8 @@ class Game private (
     numPlayed >= rules.maxScore ||
     finalTurnsLeft == 0 ||
     discarded.exists { cid =>
-      val card = cardMap(cid)
-      card.number >= nextPlayable(card.color.id) && numCardRemaining(cardLookupIdx(card)) == 0
+      val card = seenMap(cid)
+      card.number >= nextPlayable(card.color.id) && numCardRemaining(card.arrayIdx) == 0
     }
   }
 
@@ -219,18 +208,18 @@ class Game private (
   def toString(useAnsiColors: Boolean): String = {
     val handsString = (0 to (rules.numPlayers-1)).map { pid =>
       val toPlayString = if(pid == curPlayer) "*" else " "
-      toPlayString + "P" + pid + ": " + hands(pid).toString(cardMap,useAnsiColors)
+      toPlayString + "P" + pid + ": " + hands(pid).toString(seenMap,useAnsiColors)
     }.mkString("|")
 
     val playedString = rules.colors().flatMap { color =>
       val next = nextPlayable(color.id)
-      if(next <= 1)
+      if(next <= 0)
         None
       else
         Some(Card(color,next-1).toString(useAnsiColors))
     }.mkString("")
 
-    val dangerString = discarded.map { cid => cardMap(cid) }.sorted.flatMap { card =>
+    val dangerString = discarded.map { cid => seenMap(cid) }.sorted.flatMap { card =>
       if(card.number >= nextPlayable(card.color.id))
         Some(card.toString(useAnsiColors))
       else
@@ -251,11 +240,11 @@ class Game private (
   def seenActionToString(sa: SeenAction, useAnsiColors: Boolean): String = {
     sa match {
       case SeenDiscard(hid,cid) =>
-        "Discard #%d %s".format(hid+1,cardMap(cid).toString(useAnsiColors))
+        "Discard #%d %s".format(hid+1,seenMap(cid).toString(useAnsiColors))
       case SeenPlay(hid,cid) =>
-        "Play #%d %s".format(hid+1,cardMap(cid).toString(useAnsiColors))
+        "Play #%d %s".format(hid+1,seenMap(cid).toString(useAnsiColors))
       case SeenBomb(hid,cid) =>
-        "Bomb #%d %s".format(hid+1,cardMap(cid).toString(useAnsiColors))
+        "Bomb #%d %s".format(hid+1,seenMap(cid).toString(useAnsiColors))
       case SeenHint(pid,hint,appliedTo) =>
         val hintString = hint match {
           case HintColor(color) =>
@@ -264,7 +253,7 @@ class Game private (
             else
               color.toString()
           case HintNumber(number) =>
-            number.toString()
+            (number+1).toString()
           case HintSameColor =>
             "color"
           case HintSameNumber =>
@@ -290,7 +279,7 @@ class Game private (
       case GiveHint(pid,hint) =>
         val hintString = hint match {
           case HintColor(color) => color.toString()
-          case HintNumber(number) => number.toString()
+          case HintNumber(number) => (number+1).toString()
         }
         "Hint " + hintString
     }

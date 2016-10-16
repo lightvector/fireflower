@@ -6,30 +6,30 @@ object Main {
     //println("Hello world!")
     //RandTest.test()
 
-    val rules = Rules.StandardTwoPlayer
+    val rules = Rules.Standard(numPlayers=2)
 
-    // Sim.runSingle(
-    //   rules = rules,
-    //   players = (playerSeed => Array(
-    //     new RandomPlayer(playerSeed,0,rules),
-    //     new RandomPlayer(playerSeed,1,rules)
-    //   )),
-    //   doPrint = true,
-    //   useAnsiColors = true
-    // )
-
-    val _games = Sim.runMulti(
+    val _game = Sim.runSingle(
       rules = rules,
-      reps = 10000,
-      runSeed = 0L,
       players = (playerSeed => Array(
         new RandomPlayer(playerSeed,0,rules),
         new RandomPlayer(playerSeed,1,rules)
       )),
       doPrint = true,
-      doPrintDetails = false,
       useAnsiColors = true
     )
+
+    // val _games = Sim.runMulti(
+    //   rules = rules,
+    //   reps = 10000,
+    //   runSeed = 0L,
+    //   players = (playerSeed => Array(
+    //     new RandomPlayer(playerSeed,0,rules),
+    //     new RandomPlayer(playerSeed,1,rules)
+    //   )),
+    //   doPrint = true,
+    //   doPrintDetails = false,
+    //   useAnsiColors = true
+    // )
 
   }
 

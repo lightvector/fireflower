@@ -1,3 +1,10 @@
+/**
+  * Rules.scala
+  * Defines various rule sets for Hanabi.
+  * Capable of expressing a variety of sets of game parameters and also
+  * variations on how hints work, including rainbow cards and such.
+  */
+
 package fireflower
 
 abstract class Rules {
@@ -9,9 +16,6 @@ abstract class Rules {
   val maxBombs: Int
   val maxDiscards: Int
   val maxScore: Int
-
-  val maxNumber: Int
-  val maxColorId: Int
 
   def cards(): Array[Card]
   def colors(): Array[Color]
@@ -25,16 +29,29 @@ abstract class Rules {
 }
 
 object Rules {
-  object StandardTwoPlayer extends Rules {
-    val numPlayers = 2
+  case class Standard(val numPlayers: Int) extends Rules {
+    if(numPlayers < 2 || numPlayers > 5)
+      throw new Exception("Standard rules do not support numPlayers < 2 or > 5")
+
     val deckSize = 50
-    val handSize = 5
+    val handSize = numPlayers match {
+      case 2 | 3 => 5
+      case 4 | 5 => 4
+    }
+
     val initialHints = 8
     val maxHints = 8
     val maxBombs = 2
-    val maxDiscards = 17
+
+    val maxDiscards = numPlayers match {
+      case 2 => 17
+      case 3 | 4 => 13
+      case 5 => 10
+    }
+
     val maxScore = 25
     val maxNumber = 5
+
     val colorList: List[Color] = List(Red,Yellow,Green,Blue,White)
     val maxColorId = colorList.map(color => color.id).reduceLeft(math.max)
 
@@ -43,11 +60,11 @@ object Rules {
     }
 
     def cards(): Array[Card] = {
-      (1 to 5).flatMap { number =>
+      (0 to 4).flatMap { number =>
         colorList.flatMap { color =>
-          if(number == 1)
+          if(number == 0)
             List(Card(color,number),Card(color,number),Card(color,number))
-          else if(number < 5)
+          else if(number < 4)
             List(Card(color,number),Card(color,number))
           else
             List(Card(color,number))
@@ -61,7 +78,7 @@ object Rules {
     }
 
     def extraHintFromPlaying(num: Int): Boolean = {
-      num == 5
+      num == 4
     }
 
     def seenHint(hint: GiveHintType): SeenHintType = {
