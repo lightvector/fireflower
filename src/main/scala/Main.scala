@@ -6,8 +6,8 @@ object Main {
     //println("Hello world!")
     //RandTest.test()
     val rand = Rand()
-    //val gameSeed = rand.nextLong()
-    val gameSeed = 8411726411147478630L
+    val gameSeed = rand.nextLong()
+    //val gameSeed = 8411726411147478630L
     val playerSeed = gameSeed
     println("GameSeed: " + gameSeed + " PlayerSeed: " + playerSeed)
 

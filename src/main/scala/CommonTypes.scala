@@ -187,7 +187,7 @@ class CardMap private (
   val maxNumber: Int
 ) {
 
-  private def cardIdx(card: Card) = {
+  private def cardLookupIdx(card: Card) = {
     card.number - 1 + maxNumber * card.color.id
   }
 
@@ -206,11 +206,11 @@ class CardMap private (
   def update(cid: CardId, card: Card) = {
     val oldCard = cards(cid)
     if(oldCard != Card.NULL) {
-      numUnknownByCard(cardIdx(oldCard)) += 1
+      numUnknownByCard(cardLookupIdx(oldCard)) += 1
     }
     cards(cid) = card
     if(card != Card.NULL) {
-      numUnknownByCard(cardIdx(card)) -= 1
+      numUnknownByCard(cardLookupIdx(card)) -= 1
     }
   }
 }

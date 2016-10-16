@@ -5,6 +5,11 @@ import RichImplicits._
 object Game {
   def apply(rules: Rules, seed: Long): Game = {
     val cardMap = CardMap(rules,Rand(seed))
+    val numCardRemaining = Array.fill(rules.maxNumber * (rules.maxColorId+1))(0)
+    cardMap.cards.foreach { card =>
+      val lookupIdx = cardLookupIdx(card,rules)
+      numCardRemaining(lookupIdx) += 1
+    }
     new Game(
       rules = rules,
       turnNumber = 0,
@@ -20,8 +25,13 @@ object Game {
       finalTurnsLeft = -1,
       hands = Array.fill(rules.numPlayers)(Hand(rules.handSize)),
       nextPlayable = Array.fill(rules.maxColorId+1)(1),
+      numCardRemaining = numCardRemaining,
       revHistory = List()
     )
+  }
+
+  private def cardLookupIdx(card: Card, rules: Rules): Int = {
+    card.number - 1 + rules.maxNumber * card.color.id
   }
 
   def apply(that: Game): Game = {
@@ -40,6 +50,7 @@ object Game {
       finalTurnsLeft = that.finalTurnsLeft,
       hands = that.hands.map { hand => Hand(hand) },
       nextPlayable = that.nextPlayable.clone(),
+      numCardRemaining = that.numCardRemaining.clone(),
       revHistory = that.revHistory
     )
   }
@@ -61,8 +72,13 @@ class Game private (
   var finalTurnsLeft: Int,
   val hands: Array[Hand],
   val nextPlayable: Array[Int], //Indexed by ColorId
+  val numCardRemaining: Array[Int], //Number of this card remaining in deck or hand, indexed by (number-1) + maxNumber * color.id
   val revHistory: List[SeenAction]
 ) {
+
+  private def cardLookupIdx(card: Card): Int = {
+    Game.cardLookupIdx(card,rules)
+  }
 
   def isLegal(ga: GiveAction): Boolean = {
     ga match {
@@ -102,6 +118,10 @@ class Game private (
         numHints += 1
         numDiscarded += 1
         discarded = cid :: discarded
+        val card = cardMap(cid)
+        val lookupIdx = cardLookupIdx(card)
+        if(numCardRemaining(lookupIdx) > 0)
+          numCardRemaining(lookupIdx) -= 1
       case GivePlay(hid) =>
         val cid = hands(curPlayer).remove(hid)
         shouldDraw = true
@@ -113,11 +133,17 @@ class Game private (
           played = cid :: played
           if(rules.extraHintFromPlaying(card.number))
             numHints = Math.min(numHints+1,rules.maxHints)
+
+          val lookupIdx = cardLookupIdx(card)
+          numCardRemaining(lookupIdx) = -1
         }
         else {
           numDiscarded += 1
           numBombs += 1
           discarded = cid :: discarded
+          val lookupIdx = cardLookupIdx(card)
+          if(numCardRemaining(lookupIdx) > 0)
+            numCardRemaining(lookupIdx) -= 1
         }
       case GiveHint(_,_) =>
         numHints -= 1
@@ -179,7 +205,11 @@ class Game private (
     numBombs > rules.maxBombs ||
     numDiscarded > rules.maxDiscards ||
     numPlayed >= rules.maxScore ||
-    finalTurnsLeft == 0
+    finalTurnsLeft == 0 ||
+    discarded.exists { cid =>
+      val card = cardMap(cid)
+      card.number >= nextPlayable(card.color.id) && numCardRemaining(cardLookupIdx(card)) == 0
+    }
   }
 
   def isWon(): Boolean = {

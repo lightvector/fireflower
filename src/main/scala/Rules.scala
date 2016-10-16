@@ -69,6 +69,8 @@ object Rules {
     }
 
     def hintApplies(hint: GiveHintType, card: Card): Boolean = {
+      if(card == Card.NULL)
+        throw new Exception("Null card used in Game.hintApplies")
       hint match {
         case HintColor(color) =>
           card.color == color

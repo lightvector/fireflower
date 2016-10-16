@@ -6,6 +6,8 @@ lazy val root = (project in file(".")).
     version := "1.0",
     scalaVersion := "2.11.8",
 
+    fork in run := true,
+
     scalacOptions ++= Seq(
       "-deprecation",
       "-feature",

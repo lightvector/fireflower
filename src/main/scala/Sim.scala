@@ -16,9 +16,6 @@ object Sim {
       players(pid).handleGameStart(game.hiddenFor(pid))
     }
 
-    if(doPrint)
-      println(game.toString(useAnsiColors))
-
     while(!game.isDone()) {
       val player = players(game.curPlayer)
       val ga = player.getAction(game.hiddenFor(game.curPlayer))
@@ -32,5 +29,8 @@ object Sim {
         game.doAction(ga)
       }
     }
+
+    if(doPrint)
+      println(game.toString(useAnsiColors))
   }
 }
