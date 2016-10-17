@@ -61,6 +61,10 @@ class Hand private (
     }
   }
 
+  def cardArray(): Array[CardId] = {
+    Array.tabulate(numCards) { i => cards(i) }
+  }
+
   def mapCards[T:ClassTag](f: CardId => T): Array[T] = {
     Array.tabulate[T](numCards) { i => f(cards(i)) }
   }

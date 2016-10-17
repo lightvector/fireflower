@@ -1,6 +1,6 @@
 package fireflower
 
-trait Player {
+abstract class Player {
   //Called once at the start of the game after cards are drawn
   def handleGameStart(game: Game): Unit
   //Called after each action.

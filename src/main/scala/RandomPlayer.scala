@@ -34,10 +34,10 @@ class RandomPlayer(val seed: Long, val myPid: Int, val rules: Rules) extends Pla
   val rand = Rand(Array(seed,myPid.toLong))
   val possibleHintTypes: Array[GiveHintType] = rules.possibleHintTypes()
 
-  def handleGameStart(game: Game): Unit = {}
-  def handleSeenAction(preGame: Game, sa: SeenAction, postGame: Game): Unit = {}
+  override def handleGameStart(game: Game): Unit = {}
+  override def handleSeenAction(preGame: Game, sa: SeenAction, postGame: Game): Unit = {}
 
-  def getAction(game: Game): GiveAction = {
+  override def getAction(game: Game): GiveAction = {
     rand.nextInt(5) match {
       case 0 =>
         GivePlay(rand.nextInt(game.hands(myPid).numCards))

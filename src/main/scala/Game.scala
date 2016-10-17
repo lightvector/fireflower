@@ -65,7 +65,7 @@ class Game private (
   var finalTurnsLeft: Int,
   val hands: Array[Hand],
   val nextPlayable: Array[Int], //Indexed by ColorId
-  val numCardRemaining: Array[Int], //Number of this card remaining in deck or hand, indexed by (number-1) + maxNumber * color.id
+  val numCardRemaining: Array[Int], //Number of this card remaining in deck or hand, indexed by card.arrayIdx
   val revHistory: List[SeenAction]
 ) {
 
@@ -80,7 +80,7 @@ class Game private (
       case GiveHint(pid,hint) =>
         numHints > 0 &&
         possibleHintTypes.exists { ht => hint == ht } &&
-        hands(pid).exists { cid => cid != CardId.NULL && rules.hintApplies(hint,seenMap(cid)) }
+        hands(pid).exists { cid => rules.hintApplies(hint,seenMap(cid)) }
     }
   }
 
@@ -93,13 +93,23 @@ class Game private (
         else
           SeenBomb(hid,hands(curPlayer)(hid))
       case GiveHint(pid,hint) =>
-        val appliedTo = hands(pid).mapCards { cid => cid != CardId.NULL && rules.hintApplies(hint,seenMap(cid)) }
+        val appliedTo = hands(pid).mapCards { cid => rules.hintApplies(hint,seenMap(cid)) }
         SeenHint(pid,rules.seenHint(hint),appliedTo)
     }
   }
 
   def isPlayable(card: Card): Boolean = {
     nextPlayable(card.color.id) == card.number
+  }
+  def isUseful(card: Card): Boolean = {
+    nextPlayable(card.color.id) <= card.number
+  }
+  def isDangerous(card: Card): Boolean = {
+    nextPlayable(card.color.id) <= card.number &&
+    numCardRemaining(card.arrayIdx) <= 1
+  }
+  def isJunk(card: Card): Boolean = {
+    nextPlayable(card.color.id) > card.number
   }
 
   def doAction(ga: GiveAction): Unit = {
@@ -170,7 +180,7 @@ class Game private (
 
   def hideFor(pid: PlayerId): Unit = {
     deck.foreach { cid => seenMap(cid) = Card.NULL }
-    hands(pid).foreach { cid => if(cid != CardId.NULL) seenMap(cid) = Card.NULL }
+    hands(pid).foreach { cid => seenMap(cid) = Card.NULL }
   }
 
   def hiddenFor(pid: PlayerId): Game = {

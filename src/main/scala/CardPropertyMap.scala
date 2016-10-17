@@ -5,28 +5,28 @@
 
 package fireflower
 import scala.reflect.ClassTag
-import scala.collection.mutable.Queue
 
 object CardPropertyMap {
   def apply[T](rules: Rules): CardPropertyMap[T] = {
-    new CardPropertyMap[T](Array.fill(rules.deckSize)(Queue[T]()))
+    new CardPropertyMap[T](Array.fill(rules.deckSize)(List[T]()))
   }
 }
 
 class CardPropertyMap[T] private (
-  val arr: Array[Queue[T]]
+  val arr: Array[List[T]]
 ) {
 
-  def apply(cid: CardId): Queue[T] = {
+  //The most recently added values are at the front of the list
+  def apply(cid: CardId): List[T] = {
     arr(cid)
   }
 
   def add(cid: CardId, value: T): Unit = {
-    arr(cid).enqueue(value)
+    arr(cid) = value :: arr(cid)
   }
 
   def filterOut(cid: CardId)(f: T => Boolean): Unit = {
-    val _ = arr(cid).dequeueAll(f)
+    arr(cid) = arr(cid).filterNot(f)
   }
 
   def remove(cid: CardId, value: T): Unit = {
