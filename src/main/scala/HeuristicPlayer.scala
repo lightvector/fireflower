@@ -277,7 +277,7 @@ class HeuristicPlayer private (
     updateSeenMap(game)
   }
 
-  override def handleSeenAction(preGame: Game, sa: SeenAction, postGame: Game): Unit = {
+  override def handleSeenAction(sa: SeenAction, postGame: Game): Unit = {
     updateSeenMap(postGame)
     sa match {
       case SeenDiscard(hid,cid) =>
@@ -348,7 +348,7 @@ class HeuristicPlayer private (
         //knowledge about what cards could have been what prior to this action.
         //handPrePossiblesCKByCid: For all cids in a hand, the possibles for those cids
         val handPrePossiblesCKByCid: Array[List[Card]] = Array.fill(rules.deckSize)(List())
-        val prePossiblesCKByHand: Array[Array[List[Card]]] = preGame.hands.map { hand =>
+        val prePossiblesCKByHand: Array[Array[List[Card]]] = postGame.hands.map { hand =>
           hand.cardArray().map { cid =>
             val possibles = possibleCards(cid,ck=true)
             handPrePossiblesCKByCid(cid) = possibles
@@ -357,10 +357,10 @@ class HeuristicPlayer private (
         }
 
         //See what cards would have been be possible for the player to play by common knowledge
-        val prePossiblePlays: List[HandId] = possiblePlays(pid,preGame,now=true,ck=true)
+        val prePossiblePlays: List[HandId] = possiblePlays(pid,postGame,now=true,ck=true)
 
         //See what card that player would have been likely to discard
-        val (preMLD,preMLDGoodness): (HandId, DiscardGoodness) = mostLikelyDiscard(pid,preGame,ck=true)
+        val (preMLD,preMLDGoodness): (HandId, DiscardGoodness) = mostLikelyDiscard(pid,postGame,ck=true)
 
         //Now update hintedMap with the logical information of the hint
         val hintedInfo = HintedInfo(sh, hand.cardArray())
@@ -529,7 +529,15 @@ class HeuristicPlayer private (
       }
       val dangerFactor = Math.max(0.0, 1.0 - (dangerCount / 100.0))
 
-      game.numPlayed + (rules.maxScore - game.numPlayed) * dangerFactor * turnsLeftFactor * hintScoreFactor
+      val bombsLeft = rules.maxBombs - game.numBombs
+      val bombsFactor = {
+        if(bombsLeft >= 3) 1.0
+        else if(bombsLeft == 2) 0.98
+        else if(bombsLeft == 1) 0.93
+        else 0.0
+      }
+
+      game.numPlayed + (rules.maxScore - game.numPlayed) * dangerFactor * turnsLeftFactor * hintScoreFactor * bombsFactor
     }
   }
 
@@ -539,9 +547,8 @@ class HeuristicPlayer private (
     assumingCards.foreach { case (cid,card) => gameCopy.seenMap(cid) = card}
     actions.foreach { ga =>
       val sa = gameCopy.seenAction(ga)
-      val prevGame = Game(gameCopy)
       gameCopy.doAction(ga)
-      playerCopy.handleSeenAction(prevGame, sa, gameCopy)
+      playerCopy.handleSeenAction(sa, gameCopy)
     }
     playerCopy.staticEvalGame(gameCopy)
   }
@@ -552,7 +559,7 @@ class HeuristicPlayer private (
     assumingCards.foreach { case (cid,card) => nextGame.seenMap(cid) = card}
     val sa = nextGame.seenAction(ga)
     nextGame.doAction(ga)
-    nextPlayer.handleSeenAction(game.hiddenFor(nextPid), sa, nextGame.hiddenFor(nextPid))
+    nextPlayer.handleSeenAction(sa, nextGame.hiddenFor(nextPid))
     val nextAction = nextPlayer.likelyActionSimple(nextPid,nextGame)
     val eval = evalActions(game,List(ga,nextAction),assumingCards)
     eval

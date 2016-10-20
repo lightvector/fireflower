@@ -11,24 +11,24 @@ object Main {
     // val _game = Sim.runSingle(
     //   rules = rules,
     //   players = (playerSeed => Array(
-    //     new RandomPlayer(playerSeed,0,rules),
-    //     new RandomPlayer(playerSeed,1,rules)
+    //     RandomPlayer(playerSeed,0,rules),
+    //     RandomPlayer(playerSeed,1,rules)
     //   )),
     //   doPrint = true,
     //   useAnsiColors = true
     // )
 
-    // val _game = Sim.runSingle(
-    //   rules = rules,
-    //   gameSeed = -1905570214778309079L,
-    //   playerSeed = 7246858482769613123L,
-    //   players = Array(
-    //     HeuristicPlayer(rules),
-    //     HeuristicPlayer(rules)
-    //   ),
-    //   doPrint = true,
-    //   useAnsiColors = true
-    // )
+    val _game = Sim.runSingle(
+      rules = rules,
+      gameSeed = 4956284275229322651L,
+      playerSeed = 7246858482769613123L,
+      players = Array(
+        HeuristicPlayer(rules),
+        HeuristicPlayer(rules)
+      ),
+      doPrint = true,
+      useAnsiColors = true
+    )
 
     //TODO bombs are not counted in the eval
     //TODO the play sequencing is bad
@@ -46,26 +46,26 @@ object Main {
     //   useAnsiColors = true
     // )
 
-    val _games = Sim.runMulti(
-      rules = rules,
-      reps = 100,
-      runSeed = 1L,
-      players = (playerSeed => Array(
-        HeuristicPlayer(rules),
-        HeuristicPlayer(rules)
-      )),
-      doPrint = true,
-      doPrintDetails = false,
-      useAnsiColors = true
-    )
+    // val _games = Sim.runMulti(
+    //   rules = rules,
+    //   reps = 100,
+    //   runSeed = 1L,
+    //   players = (playerSeed => Array(
+    //     HeuristicPlayer(rules),
+    //     HeuristicPlayer(rules)
+    //   )),
+    //   doPrint = true,
+    //   doPrintDetails = true,
+    //   useAnsiColors = true
+    // )
 
     // val _games = Sim.runMulti(
     //   rules = rules,
     //   reps = 10000,
     //   runSeed = 0L,
     //   players = (playerSeed => Array(
-    //     new RandomPlayer(playerSeed,0,rules),
-    //     new RandomPlayer(playerSeed,1,rules)
+    //     RandomPlayer(playerSeed,0,rules),
+    //     RandomPlayer(playerSeed,1,rules)
     //   )),
     //   doPrint = true,
     //   doPrintDetails = false,
