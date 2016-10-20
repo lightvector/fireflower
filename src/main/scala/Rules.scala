@@ -16,12 +16,12 @@ abstract class Rules {
   val maxBombs: Int
   val maxDiscards: Int
   val maxScore: Int
+  val maxNumber: Int
+  val extraHintFromPlayingMax: Boolean
 
   def cards(): Array[Card]
   def colors(): Array[Color]
   def possibleHintTypes(): Array[GiveHintType]
-
-  def extraHintFromPlaying(num: Int): Boolean
 
   def seenHint(hint: GiveHintType): SeenHintType
   def hintApplies(hint: GiveHintType, card: Card): Boolean
@@ -51,6 +51,7 @@ object Rules {
 
     val maxScore = 25
     val maxNumber = 4
+    val extraHintFromPlayingMax = true
 
     val colorList: List[Color] = List(Red,Yellow,Green,Blue,White)
     val maxColorId = colorList.map(color => color.id).reduceLeft(math.max)
@@ -75,10 +76,6 @@ object Rules {
     def possibleHintTypes(): Array[GiveHintType] = {
       colorList.map(color => HintColor(color)).toArray[GiveHintType] ++
         (0 to maxNumber).map(number => HintNumber(number)).toArray[GiveHintType]
-    }
-
-    def extraHintFromPlaying(num: Int): Boolean = {
-      num == maxNumber
     }
 
     def seenHint(hint: GiveHintType): SeenHintType = {

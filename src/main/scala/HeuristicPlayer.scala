@@ -1,41 +1,82 @@
 package fireflower
 
-//Beliefs that we track per-card that stays attached to card as it moves in a hand.
-sealed trait Belief
 
 //Many of the following come in pairs, one shared between all cards that were involved
-//in the same event, and a second that contains the former as a field that actually extends
-//Info and is the value that is tracked per-card.
+//in the same event, and a second that contains the former as a field that actually
+//is the value that is tracked per-card.
+//Arrays are read-only
+
+//The shared information between all cards connected in a belief
+sealed trait BeliefInfo
+//The value we track per-card that stays attached to card as it moves in a hand.
+sealed trait Belief
 
 //A hint was received - this info is meant to track the purely logical info learned.
-case class Hinted(sh: SeenHint, hand: Array[CardId])
-case class HintedInfo(hid: HandId, applied: Boolean, hinted: Hinted)
+case class HintedInfo(sh: SeenHint, hand: Array[CardId])
+case class Hinted(hid: HandId, applied: Boolean, info: HintedInfo)
 
 //We think the following cards are playable
 //and should be played in this order. Possibly includes cards in other player's hands.
-case class PlaySequence(cids: Array[CardId])
-case class PlaySequenceBelief(seqIdx: Int, ps: PlaySequence) extends Belief
+case class PlaySequenceInfo(cids: Array[CardId]) extends BeliefInfo
+case class PlaySequence(seqIdx: Int, info: PlaySequenceInfo) extends Belief
 
 //We think that these cards are protected and should be held onto and not discarded
-case class ProtectedSet(cids: Array[CardId])
-case class ProtectedSetBelief(seqIdx: Int, ps: ProtectedSet) extends Belief
+case class ProtectedSetInfo(cids: Array[CardId]) extends BeliefInfo
+case class ProtectedSet(seqIdx: Int, info: ProtectedSetInfo) extends Belief
 
 //We think these cards can be thrown away
-case class JunkSet(cids: Array[CardId])
-case class JunkSetBelief(seqIdx: Int, js: JunkSet) extends Belief
+case class JunkSetInfo(cids: Array[CardId]) extends BeliefInfo
+case class JunkSet(seqIdx: Int, info: JunkSetInfo) extends Belief
 
-class HeuristicPlayer(val seed: Long, val myPid: Int, val rules: Rules) extends Player {
-  val rand: Rand = Rand(Array(seed,myPid.toLong))
-  val possibleHintTypes: Array[GiveHintType] = rules.possibleHintTypes()
-  val maxHints: Int = rules.maxHints
-  val uniqueCards: List[Card] = rules.cards().distinct.toList
+object HeuristicPlayer {
+  def apply(rules: Rules): HeuristicPlayer = {
+    new HeuristicPlayer(
+      rules = rules,
+      possibleHintTypes = rules.possibleHintTypes(),
+      maxHints = rules.maxHints,
+      uniqueCards = rules.cards().distinct.toList,
+      seenMap = SeenMap.empty(rules),
+      seenMapCK = SeenMap.empty(rules),
+      hintedMap = CardPropertyMap(rules),
+      beliefMap = CardPropertyMap(rules),
+      colors = rules.colors()
+    )
+  }
 
-  var seenMap: SeenMap = SeenMap.empty(rules)
-  var seenMapCK: SeenMap = SeenMap.empty(rules)
+  def apply(that: HeuristicPlayer): HeuristicPlayer = {
+    new HeuristicPlayer(
+      rules = that.rules,
+      possibleHintTypes = that.possibleHintTypes.clone(),
+      maxHints = that.maxHints,
+      uniqueCards = that.uniqueCards,
+      seenMap = SeenMap(that.seenMap),
+      seenMapCK = SeenMap(that.seenMapCK),
+      hintedMap = CardPropertyMap(that.hintedMap),
+      beliefMap = CardPropertyMap(that.beliefMap),
+      colors = that.colors
+    )
+  }
+}
 
-  val infoMap: CardPropertyMap[HintedInfo] = CardPropertyMap(rules)
-  val beliefMap: CardPropertyMap[Belief] = CardPropertyMap(rules)
+class HeuristicPlayer private (
+  val rules: Rules,
+  val possibleHintTypes: Array[GiveHintType],
+  val maxHints: Int,
+  val uniqueCards: List[Card],
+  val colors: Array[Color],
 
+  //Tracks what cards are visible by us
+  var seenMap: SeenMap,
+  //Tracks what cards are visible as common knowledge
+  var seenMapCK: SeenMap,
+
+  //Logical information we've received via hints, tracked by card
+  val hintedMap: CardPropertyMap[Hinted],
+  //Beliefs we have about cards based on observations
+  val beliefMap: CardPropertyMap[Belief]
+) extends Player {
+
+  //Update the seen maps based on a new incoming game state
   def updateSeenMap(game: Game): Unit = {
     seenMap = SeenMap(game.seenMap)
     seenMapCK = SeenMap(game.seenMap)
@@ -44,6 +85,24 @@ class HeuristicPlayer(val seed: Long, val myPid: Int, val rules: Rules) extends 
     }
   }
 
+  //Add a belief via its shared info, computing the per-card values to store
+  def addBelief(info: BeliefInfo): Unit = {
+    info match {
+      case (info:PlaySequenceInfo) =>
+        for(i <- 0 to (info.cids.length-1))
+          beliefMap.add(info.cids(i),PlaySequence(seqIdx=i,info=info))
+      case (info:ProtectedSetInfo) =>
+        for(i <- 0 to (info.cids.length-1))
+          beliefMap.add(info.cids(i),ProtectedSet(seqIdx=i,info=info))
+      case (info:JunkSetInfo) =>
+        for(i <- 0 to (info.cids.length-1))
+          beliefMap.add(info.cids(i),JunkSet(seqIdx=i,info=info))
+    }
+  }
+
+  //What cards could [cid] be as a strictly logical possiblity?
+  //If ck is false, uses all information known.
+  //If ck is true, uses only common knowledge information.
   def possibleCards(cid: CardId, ck: Boolean): List[Card] = {
     var sm = seenMap
     if(ck) sm = seenMapCK
@@ -53,14 +112,17 @@ class HeuristicPlayer(val seed: Long, val myPid: Int, val rules: Rules) extends 
       List(seenCard)
     else {
       val possibles: List[Card] = sm.uniqueUnseen()
-      infoMap(cid).foldLeft(possibles) { case (possibles,info) =>
-        possibles.filter { card => rules.isConsistent(info.hinted.sh.hint, info.applied, card) }
+      hintedMap(cid).foldLeft(possibles) { case (possibles,hinted) =>
+        possibles.filter { card => rules.isConsistent(hinted.info.sh.hint, hinted.applied, card) }
       }
     }
   }
 
   def provablyPlayable(possibles: List[Card], game: Game): Boolean = {
     possibles.forall { card => game.isPlayable(card) }
+  }
+  def provablyNotPlayable(possibles: List[Card], game: Game): Boolean = {
+    possibles.forall { card => !game.isPlayable(card) }
   }
   def provablyUseful(possibles: List[Card], game: Game): Boolean = {
     possibles.forall { card => game.isUseful(card) }
@@ -72,51 +134,49 @@ class HeuristicPlayer(val seed: Long, val myPid: Int, val rules: Rules) extends 
     possibles.forall { card => game.isJunk(card) }
   }
 
-  def isBelievedProtected(cid: CardId) = {
+  //The most recent belief formed about this card, if any.
+  def primeBelief(cid: CardId): Option[Belief] = {
     beliefMap(cid) match {
-      case Nil => false
-      case belief :: rest =>
-        belief match {
-          case (_: ProtectedSetBelief) => true
-          case (_: PlaySequenceBelief) => false
-          case (_: JunkSetBelief) => false
-        }
-    }
-  }
-  def isBelievedPlayable(cid: CardId, now: Boolean) = {
-    beliefMap(cid) match {
-      case Nil => false
-      case belief :: rest =>
-        belief match {
-          case (_: ProtectedSetBelief) => false
-          case (b: PlaySequenceBelief) => if (now) b.seqIdx == 0 else true
-          case (_: JunkSetBelief) => false
-        }
-    }
-  }
-  def isBelievedUseful(cid: CardId) = {
-    beliefMap(cid) match {
-      case Nil => false
-      case belief :: rest =>
-        belief match {
-          case (_: ProtectedSetBelief) => true
-          case (_: PlaySequenceBelief) => true
-          case (_: JunkSetBelief) => false
-        }
-    }
-  }
-  def isBelievedJunk(cid: CardId) = {
-    beliefMap(cid) match {
-      case Nil => false
-      case belief :: rest =>
-        belief match {
-          case (_: ProtectedSetBelief) => false
-          case (_: PlaySequenceBelief) => false
-          case (_: JunkSetBelief) => true
-        }
+      case Nil => None
+      case belief :: _ => Some(belief)
     }
   }
 
+  def isBelievedProtected(cid: CardId): Boolean = {
+    primeBelief(cid) match {
+      case None => false
+      case Some(_: ProtectedSet) => true
+      case Some(_: PlaySequence) => false
+      case Some(_: JunkSet) => false
+    }
+  }
+  def isBelievedPlayable(cid: CardId, now: Boolean): Boolean = {
+    primeBelief(cid) match {
+      case None => false
+      case Some(_: ProtectedSet) => false
+      case Some(b: PlaySequence) => if (now) b.seqIdx == 0 else true
+      case Some(_: JunkSet) => false
+    }
+  }
+  def isBelievedUseful(cid: CardId): Boolean = {
+    primeBelief(cid) match {
+      case None => false
+      case Some(_: ProtectedSet) => true
+      case Some(_: PlaySequence) => true
+      case Some(_: JunkSet) => false
+    }
+  }
+  def isBelievedJunk(cid: CardId): Boolean = {
+    primeBelief(cid) match {
+      case None => false
+      case Some(_: ProtectedSet) => false
+      case Some(_: PlaySequence) => false
+      case Some(_: JunkSet) => true
+    }
+  }
+
+  //If beliefs and conventions strongly suggest that this card should be a specific card, return
+  //that card, otherwise return Card.NULL.
   def believedCard(cid: CardId): Card = {
     //TODO
     return Card.NULL
@@ -137,10 +197,10 @@ class HeuristicPlayer(val seed: Long, val myPid: Int, val rules: Rules) extends 
   val DISCARD_MAYBE_GAMEOVER: DiscardGoodness = 1
   val DISCARD_GAMEOVER: DiscardGoodness = 0
 
-  def mostLikelyDiscard(pid: PlayerId, game: Game): (HandId,DiscardGoodness) = {
+  //Goodness and discard are by common knowledge if and only if
+  def mostLikelyDiscard(pid: PlayerId, game: Game, ck: Boolean): (HandId,DiscardGoodness) = {
     val revHand: Array[CardId] = game.hands(pid).cardArray().reverse
     val numCards = revHand.length
-    val ck = pid == myPid
     val possibles: Array[List[Card]] = revHand.map { cid => possibleCards(cid,ck) }
 
     val (pos,dg): (Int,DiscardGoodness) = {
@@ -188,6 +248,30 @@ class HeuristicPlayer(val seed: Long, val myPid: Int, val rules: Rules) extends 
     (numCards-1-pos,dg)
   }
 
+  //Find all the hand positions we think the given player can play.
+  //Now determines if the cards must be playable now rather than eventually.
+  //ck determines if we only check using common knowledge or all observed info
+  def possiblePlays(pid: PlayerId, game: Game, now: Boolean, ck: Boolean): List[HandId] = {
+    val hand = game.hands(pid)
+    (0 to (hand.numCards-1)).filter { hid =>
+      val cid = hand(hid)
+      val possibles = possibleCards(cid,ck)
+      if(provablyNotPlayable(possibles,game))
+        false
+      else {
+        provablyPlayable(possibles,game) ||
+        {
+          primeBelief(cid) match {
+            case None => false
+            case Some(_: ProtectedSet) => false
+            case Some(_: JunkSet) => false
+            case Some(b: PlaySequence) =>
+              if(now) b.seqIdx == 0 else true
+          }
+        }
+      }
+    }.toList
+  }
 
   override def handleGameStart(game: Game): Unit = {
     updateSeenMap(game)
@@ -195,12 +279,357 @@ class HeuristicPlayer(val seed: Long, val myPid: Int, val rules: Rules) extends 
 
   override def handleSeenAction(preGame: Game, sa: SeenAction, postGame: Game): Unit = {
     updateSeenMap(postGame)
+    sa match {
+      case SeenDiscard(hid,cid) =>
+        val card = seenMap(cid)
+
+        //Check and update beliefs based on the discard if the discard turned out to not actually be junk
+        if(card != Card.NULL && !postGame.isJunk(card)) {
+          primeBelief(cid) match {
+            //No prior belief
+            case None => ()
+            //Card was protected - something unusual must have happened for the player to throw it away
+            //TODO we should probably have some logic here
+            case Some(_: ProtectedSet) => ()
+            //Card was a believed play - something unusual must have happened for the player to throw it away
+            //TODO we should probably have some logic here
+            case Some(_: PlaySequence) => ()
+            //Card was believed junk
+            case Some(b: JunkSet) =>
+              //If the card was not actually junk, then immediately change everything in the believed junk set
+              //to protected so we don't keep discarding them.
+              addBelief(ProtectedSetInfo(cids = b.info.cids))
+          }
+        }
+
+      case SeenPlay(hid,cid) =>
+        val card = seenMap(cid)
+        //Successful play
+        primeBelief(cid) match {
+          //No prior belief
+          case None => ()
+          //Card was protected - presumably the player somehow inferred it as playable
+          case Some(_: ProtectedSet) => ()
+          //Card was believed junk - presumably the player somehow inferred it as playable
+          case Some(_: JunkSet) => ()
+          //Card was a believed play. We actually don't need to do any updates here because
+          //we later update all play sequences to remove newly provable junk cards.
+          case Some(_: PlaySequence) => ()
+        }
+
+      case SeenBomb(hid,cid) =>
+        //Unsuccessful play
+        primeBelief(cid) match {
+          //No prior belief
+          case None => ()
+          //Card was protected - presumably the player somehow inferred it as playable but bombed??
+          case Some(_: ProtectedSet) => ()
+          //Card was believed junk - presumably the player somehow inferred it as playable or chose to play it anyways??
+          case Some(_: JunkSet) => ()
+          //Card was a believed play, but turned out to bomb.
+          case Some(b: PlaySequence) =>
+            //Immediately change everything in the sequence to protected if the card was useful
+            //If it was junk, assume it was just an unfortunate collision
+            val card = seenMap(cid)
+            if(postGame.isUseful(card)) {
+              addBelief(ProtectedSetInfo(cids = b.info.cids))
+            }
+        }
+
+      case (sh: SeenHint) =>
+        val pid = sh.pid
+        val hand = postGame.hands(pid)
+        val hintCids = (0 to (hand.numCards-1)).flatMap { hid =>
+          if(sh.appliedTo(hid)) Some(hand(hid))
+          else None
+        }.toArray
+
+        //Prior to updating the hintedMap of what we and everyone knows about cards, figure out common
+        //knowledge about what cards could have been what prior to this action.
+        //handPrePossiblesCKByCid: For all cids in a hand, the possibles for those cids
+        val handPrePossiblesCKByCid: Array[List[Card]] = Array.fill(rules.deckSize)(List())
+        val prePossiblesCKByHand: Array[Array[List[Card]]] = preGame.hands.map { hand =>
+          hand.cardArray().map { cid =>
+            val possibles = possibleCards(cid,ck=true)
+            handPrePossiblesCKByCid(cid) = possibles
+            possibles
+          }
+        }
+
+        //See what cards would have been be possible for the player to play by common knowledge
+        val prePossiblePlays: List[HandId] = possiblePlays(pid,preGame,now=true,ck=true)
+
+        //See what card that player would have been likely to discard
+        val (preMLD,preMLDGoodness): (HandId, DiscardGoodness) = mostLikelyDiscard(pid,preGame,ck=true)
+
+        //Now update hintedMap with the logical information of the hint
+        val hintedInfo = HintedInfo(sh, hand.cardArray())
+        for (hid <- 0 to (hand.numCards-1)) {
+          val hinted = Hinted(hid,sh.appliedTo(hid),hintedInfo)
+          hintedMap.add(hand(hid),hinted)
+        }
+
+        //Check if it's a number hint where all cards touched are possibly playable and the number of cards
+        //touched is larger than the number of playables of that number.
+        val numberHintWithPlay: Boolean = {
+          sh.hint match {
+            case HintNumber(num) =>
+              val allPossiblyPlayble = hintCids.forall { cid =>
+                val possibles = handPrePossiblesCKByCid(cid)
+                !provablyNotPlayable(possibles,postGame)
+              }
+              allPossiblyPlayble && hintCids.length > postGame.nextPlayable.count { n => n == num }
+            case _ => false
+          }
+        }
+
+        //If the hint targets the most likely discard
+        //AND (there are no cards that the player would have played OR the hint touches a card we would have played)
+        //AND (it's not a number hint where common knowledge says at least one MUST be playable)
+        //then it's a protection hint.
+        if(sh.appliedTo(preMLD) &&
+          (prePossiblePlays.isEmpty || prePossiblePlays.exists { hid => sh.appliedTo(hid) }) &&
+          !numberHintWithPlay
+        ) {
+          addBelief(ProtectedSetInfo(cids = hintCids))
+        }
+        //TODO this needs to be more sophisticated as well
+        //Otherwise if at least one card could be playable, then it's a play hint
+        else if(hintCids.exists { cid =>
+          val possibles = handPrePossiblesCKByCid(cid)
+          !provablyNotPlayable(possibles,postGame)
+        }) {
+          //TODO this needs to be more sophisticated and take into account other hinted-as-plays cards
+          //Cards that are provably playable come first in the ordering
+          val (hintCidsProvable, hintCidsNotProvable): (Array[CardId],Array[CardId]) =
+            hintCids.partition { cid => provablyPlayable(handPrePossiblesCKByCid(cid),postGame) }
+          addBelief(PlaySequenceInfo(cids = hintCidsProvable ++ hintCidsNotProvable))
+        }
+        //Otherwise if all cards in the hint are provably unplayable and not provably junk,
+        //then it's a protection hint.
+        else if(hintCids.forall { cid =>
+          val possibles = handPrePossiblesCKByCid(cid)
+          provablyNotPlayable(possibles,postGame) && !provablyJunk(possibles,postGame)
+        }) {
+          addBelief(ProtectedSetInfo(cids = hintCids))
+        }
+    }
+
+    //Find all card ids in a hand right now
+    val cidInHandAndCouldBePlayable: Array[Boolean] = Array.fill(rules.deckSize)(false)
+    postGame.hands.foreach { hand =>
+      hand.foreach { cid =>
+        val possibles = possibleCards(cid,ck=true)
+        if(!provablyNotPlayable(possibles,postGame))
+          cidInHandAndCouldBePlayable(cid) = true
+      }
+    }
+    //Filter play sequences down to only these card ids
+    postGame.hands.foreach { hand =>
+      hand.foreach { cid =>
+        primeBelief(cid) match {
+          case None => ()
+          case Some(_: ProtectedSet) => ()
+          case Some(_: JunkSet) => ()
+          case Some(b: PlaySequence) =>
+            val (newCids,filteredCids) = b.info.cids.partition { cid => cidInHandAndCouldBePlayable(cid) }
+            if(filteredCids.length > 0) {
+              addBelief(PlaySequenceInfo(cids = newCids))
+              addBelief(ProtectedSetInfo(cids = filteredCids))
+            }
+        }
+      }
+    }
+
+  }
+
+
+  def softPlus(x: Double, width: Double) = {
+    if(x/width >= 40.0)
+      40.0
+    else
+      Math.log(1.0 + Math.exp(x/width)) * width
+  }
+
+  def staticEvalGame(game: Game): Double = {
+    if(game.isDone())
+      game.numPlayed.toDouble
+    else {
+      val numDiscardsLeft = rules.maxDiscards - game.numDiscarded
+      val numPotentialHints =
+        numDiscardsLeft + game.numHints + {
+          if(rules.extraHintFromPlayingMax)
+            colors.count { color => game.nextPlayable(color.id) <= rules.maxNumber }
+          else
+            0
+        }
+      val fixupHintsRequired =
+        game.hands.foldLeft(0.0) { case (acc,hand) =>
+          hand.foldLeft(acc) { case (acc,cid) =>
+            val card = game.seenMap(cid)
+            if(card == Card.NULL)
+              0.0
+            else {
+              val possibles = possibleCards(cid,ck=true)
+              if(!provablyNotPlayable(possibles,game) && isBelievedPlayable(cid,now=true) && !game.isPlayable(card))
+                0.8
+              if(!provablyJunk(possibles,game) && isBelievedPlayable(cid,now=false) && !game.isUseful(card))
+                0.6
+              else if(!provablyJunk(possibles,game) && isBelievedUseful(cid) && !game.isUseful(card))
+                0.4
+              else if(!provablyUseful(possibles,game) && isBelievedJunk(cid) && game.isDangerous(card))
+                0.8
+              else
+                0.0
+            }
+          }
+        }
+      val goodKnowledge =
+        game.hands.foldLeft(0.0) { case (acc,hand) =>
+          hand.foldLeft(acc) { case (acc,cid) =>
+            val card = game.seenMap(cid)
+            if(isBelievedPlayable(cid,now=true) && (card == Card.NULL || game.isPlayable(card)))
+              0.8
+            //TODO make this better
+            else if(isBelievedPlayable(cid,now=false) && (card == Card.NULL || game.isUseful(card)))
+              0.8
+            else if(isBelievedUseful(cid) && (card == Card.NULL || game.isUseful(card)))
+              0.3
+            else if(isBelievedJunk(cid) && (card == Card.NULL || game.isJunk(card)))
+              0.1
+            else
+              0.0
+          }
+        }
+
+      val playsLeft = rules.maxScore - game.numPlayed
+      val netFreeHints = numPotentialHints * 0.9 + goodKnowledge - (fixupHintsRequired + playsLeft)
+
+      //How much of the remaining score are we not getting due to lack of hints
+      val hintScoreFactor = Math.max(0, (playsLeft.toDouble + 2.0 - softPlus(-netFreeHints,2.0)) / (playsLeft + 2.0))
+
+      //How much of the remaining score are we not getting due to lack of turns
+      val turnsLeft = {
+        if(game.finalTurnsLeft >= 0) game.finalTurnsLeft
+        else game.deck.length + rules.numPlayers
+      }
+      val turnsLeftFactor = Math.min(playsLeft.toDouble, 0.8 * turnsLeft) / playsLeft.toDouble
+
+      //How much of the remaining score are we not getting due to danger stuff
+      val dangerCount = uniqueCards.foldLeft(0) { case (acc,card) =>
+        if(card.number >= game.nextPlayable(card.color.id) &&
+          game.isDangerous(card) &&
+          seenMap.numUnseenByCard(card.arrayIdx) == 1)
+          acc + (rules.maxNumber - card.number)
+        else
+          acc
+      }
+
+      val dangerFactor = Math.max(0.0, 1.0 - (dangerCount / 100.0))
+      game.numPlayed + (rules.maxScore - game.numPlayed) * dangerFactor * turnsLeftFactor * hintScoreFactor
+    }
+  }
+
+  def evalActions(game: Game, actions: List[GiveAction], assumingCards: List[(CardId,Card)]): Double = {
+    val gameCopy = Game(game)
+    val playerCopy = HeuristicPlayer(this)
+    assumingCards.foreach { case (cid,card) => gameCopy.seenMap(cid) = card}
+    actions.foreach { ga =>
+      val sa = gameCopy.seenAction(ga)
+      val prevGame = Game(gameCopy)
+      gameCopy.doAction(ga)
+      playerCopy.handleSeenAction(prevGame, sa, gameCopy)
+    }
+    playerCopy.staticEvalGame(gameCopy)
+  }
+
+  def evalLikelyActionSimple(nextPid: PlayerId, game: Game, ga: GiveAction, assumingCards: List[(CardId,Card)]): Double = {
+    val nextPlayer = HeuristicPlayer(this)
+    val nextGame = Game(game)
+    assumingCards.foreach { case (cid,card) => nextGame.seenMap(cid) = card}
+    val sa = nextGame.seenAction(ga)
+    nextGame.doAction(ga)
+    nextPlayer.handleSeenAction(game.hiddenFor(nextPid), sa, nextGame.hiddenFor(nextPid))
+    val nextAction = nextPlayer.likelyActionSimple(nextPid,nextGame)
+    evalActions(game,List(ga,nextAction),assumingCards)
+  }
+
+  //TODO make this better
+  def likelyActionSimple(pid: PlayerId, game: Game): GiveAction = {
+    val playsNow: List[HandId] = possiblePlays(pid, game, now=true, ck=false)
+    if(playsNow.nonEmpty)
+      GivePlay(playsNow.head)
+    else {
+      val (mld,dg) = mostLikelyDiscard(pid,game,ck=false)
+      GiveDiscard(mld)
+    }
   }
 
   override def getAction(game: Game): GiveAction = {
-    updateSeenMap(game)
+    val myPid = game.curPlayer
+    val nextPid = (myPid+1) % rules.numPlayers
+
+    val plays: List[HandId] = possiblePlays(myPid, game, now=false, ck=false)
+    val playsNow: List[HandId] = possiblePlays(myPid, game, now=true, ck=false)
+
+    var bestAction: GiveAction = GiveDiscard(0)
+    var bestActionValue: Double = -10000.0
+
+
+    //Try all play actions
+    playsNow.foreach { hid =>
+      //Right now, we only play cards we think are probably playable, so get all the possibilities
+      //and filter down conditioning on the card being playable, and average over the results
+      val cid = game.hands(myPid)(hid)
+      val possibles = possibleCards(cid,ck=false).filter { card => game.isPlayable(card) }
+      val ga = GivePlay(hid)
+      var sum = 0.0
+      val evals = possibles.foreach { card =>
+        sum += evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
+      }
+      val value = sum / possibles.length.toDouble
+      if(value > bestActionValue) {
+        bestActionValue = value
+        bestAction = ga
+      }
+    }
+
+    //Try our most likely discard action
+    if(game.numHints < rules.maxHints) {
+      val (mld,dg) = mostLikelyDiscard(myPid,game,ck=false)
+      val cid = game.hands(myPid)(mld)
+      val possibles = dg match {
+        case (DISCARD_PROVABLE_JUNK | DISCARD_JUNK | DISCARD_REGULAR) =>
+          possibleCards(cid,ck=false).filter { card => game.isJunk(card) }
+        case (DISCARD_USEFUL | DISCARD_PLAYABLE | DISCARD_MAYBE_GAMEOVER | DISCARD_GAMEOVER) =>
+          possibleCards(cid,ck=false)
+      }
+      val ga = GiveDiscard(mld)
+      var sum = 0.0
+      val evals = possibles.foreach { card =>
+        sum += evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
+      }
+      val value = sum / possibles.length.toDouble
+      if(value > bestActionValue) {
+        bestActionValue = value
+        bestAction = ga
+      }
+    }
+
+    //Try all hint actions
+    if(game.numHints > 0) {
+      possibleHintTypes.foreach { hint =>
+        val ga = GiveHint(nextPid,hint)
+        val value = evalLikelyActionSimple(nextPid,game,ga,assumingCards=List())
+        if(value > bestActionValue) {
+          bestActionValue = value
+          bestAction = ga
+        }
+      }
+    }
+
+    //And return the best action
+    bestAction
   }
-
-
 
 }

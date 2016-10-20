@@ -46,7 +46,7 @@ A quick overview of what files in src/main/scala/ contain what, in approximately
 * Player Implementation
   * CardPropertyMap.scala - data structure to remember properties of cards, used in implementation of AI players
   * RandomPlayer.scala - a player that plays randomly
-  * HeuristicPlayer.scala - a player that plays via hardcoded rules and heuristics, with no search or modeling
+  * HeuristicPlayer.scala - a player that plays via hardcoded rules and heuristics, with minimal search or modeling
 * Main
   * Main.scala - top level driver, runs the program
 

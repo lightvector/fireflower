@@ -29,6 +29,11 @@ package fireflower
   // [info] Score 25  Games:  0  Percent:  0.0%
   // [info] Average Utility: 1.3992
 
+object RandomPlayer {
+  def apply(seed: Long, myPid: Int, rules: Rules): RandomPlayer = {
+    new RandomPlayer(seed,myPid,rules)
+  }
+}
 
 class RandomPlayer(val seed: Long, val myPid: Int, val rules: Rules) extends Player {
   val rand = Rand(Array(seed,myPid.toLong))

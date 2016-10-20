@@ -6,7 +6,11 @@ object Game {
   def apply(rules: Rules, seed: Long): Game = {
     val seenMap = SeenMap(rules,Rand(seed))
     val numCardRemaining = Array.fill(Card.maxArrayIdx)(0)
-    seenMap.cards.foreach { card => numCardRemaining(card.arrayIdx) += 1 }
+    val nextPlayable = Array.fill(Color.LIMIT)(-1)
+    seenMap.cards.foreach { card =>
+      numCardRemaining(card.arrayIdx) += 1
+      nextPlayable(card.color.id) = 0
+    }
     new Game(
       rules = rules,
       turnNumber = 0,
@@ -21,7 +25,7 @@ object Game {
       curPlayer = 0,
       finalTurnsLeft = -1,
       hands = Array.fill(rules.numPlayers)(Hand(rules.handSize)),
-      nextPlayable = Array.fill(Color.LIMIT)(0),
+      nextPlayable = nextPlayable,
       numCardRemaining = numCardRemaining,
       revHistory = List()
     )
@@ -134,7 +138,7 @@ class Game private (
           numPlayed += 1
           nextPlayable(card.color.id) += 1
           played = cid :: played
-          if(rules.extraHintFromPlaying(card.number))
+          if(rules.extraHintFromPlayingMax && card.number == rules.maxNumber)
             numHints = Math.min(numHints+1,rules.maxHints)
 
           val cardArrayIdx = card.arrayIdx

@@ -18,18 +18,30 @@ object Main {
     //   useAnsiColors = true
     // )
 
-    val _games = Sim.runMulti(
+    val _game = Sim.runSingle(
       rules = rules,
-      reps = 10000,
-      runSeed = 0L,
-      players = (playerSeed => Array(
-        new RandomPlayer(playerSeed,0,rules),
-        new RandomPlayer(playerSeed,1,rules)
-      )),
+      gameSeed = -1905570214778309071L,
+      playerSeed = 7246858482769613123L,
+      players = Array(
+        HeuristicPlayer(rules),
+        HeuristicPlayer(rules)
+      ),
       doPrint = true,
-      doPrintDetails = false,
       useAnsiColors = true
     )
+
+    // val _games = Sim.runMulti(
+    //   rules = rules,
+    //   reps = 10000,
+    //   runSeed = 0L,
+    //   players = (playerSeed => Array(
+    //     new RandomPlayer(playerSeed,0,rules),
+    //     new RandomPlayer(playerSeed,1,rules)
+    //   )),
+    //   doPrint = true,
+    //   doPrintDetails = false,
+    //   useAnsiColors = true
+    // )
 
   }
 

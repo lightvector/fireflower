@@ -10,6 +10,9 @@ object CardPropertyMap {
   def apply[T](rules: Rules): CardPropertyMap[T] = {
     new CardPropertyMap[T](Array.fill(rules.deckSize)(List[T]()))
   }
+  def apply[T](that: CardPropertyMap[T]) = {
+    new CardPropertyMap[T](that.arr.clone())
+  }
 }
 
 class CardPropertyMap[T] private (

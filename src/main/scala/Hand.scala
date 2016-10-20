@@ -61,6 +61,17 @@ class Hand private (
     }
   }
 
+  def foldLeft[U](init: U)(f: (U,CardId) => U): U = {
+    var i = 0
+    var acc = init
+    while(i < numCards) {
+      acc = f(acc,cards(i))
+      i += 1
+    }
+    acc
+  }
+
+  //Makes a copy
   def cardArray(): Array[CardId] = {
     Array.tabulate(numCards) { i => cards(i) }
   }
