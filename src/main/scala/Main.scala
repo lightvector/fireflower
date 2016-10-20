@@ -18,15 +18,44 @@ object Main {
     //   useAnsiColors = true
     // )
 
-    val _game = Sim.runSingle(
+    // val _game = Sim.runSingle(
+    //   rules = rules,
+    //   gameSeed = -1905570214778309079L,
+    //   playerSeed = 7246858482769613123L,
+    //   players = Array(
+    //     HeuristicPlayer(rules),
+    //     HeuristicPlayer(rules)
+    //   ),
+    //   doPrint = true,
+    //   useAnsiColors = true
+    // )
+
+    //TODO bombs are not counted in the eval
+    //TODO the play sequencing is bad
+    //TODO often run out of hints and then can't protect 5s
+    //TODO look at why this went wrong
+    //-6310882139785350969
+
+    // val _game = Sim.runSingle(
+    //   rules = rules,
+    //   players = (playerSeed => Array(
+    //     HeuristicPlayer(rules),
+    //     HeuristicPlayer(rules)
+    //   )),
+    //   doPrint = true,
+    //   useAnsiColors = true
+    // )
+
+    val _games = Sim.runMulti(
       rules = rules,
-      gameSeed = -1905570214778309071L,
-      playerSeed = 7246858482769613123L,
-      players = Array(
+      reps = 100,
+      runSeed = 1L,
+      players = (playerSeed => Array(
         HeuristicPlayer(rules),
         HeuristicPlayer(rules)
-      ),
+      )),
       doPrint = true,
+      doPrintDetails = false,
       useAnsiColors = true
     )
 

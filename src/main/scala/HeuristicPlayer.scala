@@ -212,7 +212,7 @@ class HeuristicPlayer private (
           junkDiscard match {
             case Some(pos) => (pos,DISCARD_JUNK)
             case None =>
-              val regularDiscard = (0 to (numCards-1)).find { pos => !isBelievedUseful(revHand(pos)) && !provablyUseful(possibles(pos),game) }
+              val regularDiscard = (0 to (numCards-1)).find { pos => !isBelievedUseful(revHand(pos)) }
               regularDiscard match {
                 case Some(pos) => (pos,DISCARD_REGULAR)
                 case None =>
@@ -370,7 +370,7 @@ class HeuristicPlayer private (
         }
 
         //Check if it's a number hint where all cards touched are possibly playable and the number of cards
-        //touched is larger than the number of playables of that number.
+        //touched is larger than the number of playables or eventual playables of that number.
         val numberHintWithPlay: Boolean = {
           sh.hint match {
             case HintNumber(num) =>
@@ -378,7 +378,7 @@ class HeuristicPlayer private (
                 val possibles = handPrePossiblesCKByCid(cid)
                 !provablyNotPlayable(possibles,postGame)
               }
-              allPossiblyPlayble && hintCids.length > postGame.nextPlayable.count { n => n == num }
+              allPossiblyPlayble && hintCids.length > postGame.nextPlayable.count { n => n <= num }
             case _ => false
           }
         }
@@ -394,9 +394,9 @@ class HeuristicPlayer private (
           addBelief(ProtectedSetInfo(cids = hintCids))
         }
         //TODO this needs to be more sophisticated as well
-        //Otherwise if at least one card could be playable, then it's a play hint
+        //Otherwise if at least one card could be playable after the hint, then it's a play hint
         else if(hintCids.exists { cid =>
-          val possibles = handPrePossiblesCKByCid(cid)
+          val possibles = possibleCards(cid,ck=true)
           !provablyNotPlayable(possibles,postGame)
         }) {
           //TODO this needs to be more sophisticated and take into account other hinted-as-plays cards
@@ -408,7 +408,7 @@ class HeuristicPlayer private (
         //Otherwise if all cards in the hint are provably unplayable and not provably junk,
         //then it's a protection hint.
         else if(hintCids.forall { cid =>
-          val possibles = handPrePossiblesCKByCid(cid)
+          val possibles = possibleCards(cid,ck=true)
           provablyNotPlayable(possibles,postGame) && !provablyJunk(possibles,postGame)
         }) {
           addBelief(ProtectedSetInfo(cids = hintCids))
@@ -491,8 +491,11 @@ class HeuristicPlayer private (
             if(isBelievedPlayable(cid,now=true) && (card == Card.NULL || game.isPlayable(card)))
               0.8
             //TODO make this better
-            else if(isBelievedPlayable(cid,now=false) && (card == Card.NULL || game.isUseful(card)))
+            else if(!isBelievedPlayable(cid,now=true) && isBelievedPlayable(cid,now=false) &&
+              (card == Card.NULL || (!game.isPlayable(card) && game.isUseful(card))))
               0.8
+            else if(isBelievedUseful(cid) && (card != Card.NULL && game.isDangerous(card)))
+              0.6
             else if(isBelievedUseful(cid) && (card == Card.NULL || game.isUseful(card)))
               0.3
             else if(isBelievedJunk(cid) && (card == Card.NULL || game.isJunk(card)))
@@ -524,8 +527,8 @@ class HeuristicPlayer private (
         else
           acc
       }
-
       val dangerFactor = Math.max(0.0, 1.0 - (dangerCount / 100.0))
+
       game.numPlayed + (rules.maxScore - game.numPlayed) * dangerFactor * turnsLeftFactor * hintScoreFactor
     }
   }
@@ -551,7 +554,8 @@ class HeuristicPlayer private (
     nextGame.doAction(ga)
     nextPlayer.handleSeenAction(game.hiddenFor(nextPid), sa, nextGame.hiddenFor(nextPid))
     val nextAction = nextPlayer.likelyActionSimple(nextPid,nextGame)
-    evalActions(game,List(ga,nextAction),assumingCards)
+    val eval = evalActions(game,List(ga,nextAction),assumingCards)
+    eval
   }
 
   //TODO make this better
@@ -620,10 +624,12 @@ class HeuristicPlayer private (
     if(game.numHints > 0) {
       possibleHintTypes.foreach { hint =>
         val ga = GiveHint(nextPid,hint)
-        val value = evalLikelyActionSimple(nextPid,game,ga,assumingCards=List())
-        if(value > bestActionValue) {
-          bestActionValue = value
-          bestAction = ga
+        if(game.isLegal(ga)) {
+          val value = evalLikelyActionSimple(nextPid,game,ga,assumingCards=List())
+          if(value > bestActionValue) {
+            bestActionValue = value
+            bestAction = ga
+          }
         }
       }
     }
