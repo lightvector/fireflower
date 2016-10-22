@@ -9,3 +9,7 @@ abstract class Player {
   //Called when the Player should make its move.
   def getAction(game: Game): GiveAction
 }
+
+trait PlayerGen {
+  def genPlayers(rules: Rules, seed: Long): Array[Player]
+}

@@ -71,6 +71,17 @@ class Hand private (
     acc
   }
 
+  def count(f: CardId => Boolean): Int = {
+    var i = 0
+    var acc = 0
+    while(i < numCards) {
+      if(f(cards(i)))
+        acc += 1
+      i += 1
+    }
+    acc
+  }
+
   //Makes a copy
   def cardArray(): Array[CardId] = {
     Array.tabulate(numCards) { i => cards(i) }

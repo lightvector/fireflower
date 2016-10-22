@@ -130,6 +130,10 @@ object RandUtils {
     javax.xml.bind.DatatypeConverter.printHexBinary(sha256Bytes(s))
   }
 
+  def sha256Long(s: String): Long = {
+    bytesToLongs(sha256Bytes("sha256Long" + sha256(s)))(0)
+  }
+
   def bytesToLongs(bytes: Array[Byte]): Array[Long] = {
     val longs = (0 to (bytes.length / 8 - 1)).map { i =>
       ((bytes(i*8+0).toLong & 0xFFL) <<  0) |

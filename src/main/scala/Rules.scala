@@ -18,6 +18,7 @@ abstract class Rules {
   val maxScore: Int
   val maxNumber: Int
   val extraHintFromPlayingMax: Boolean
+  val stopEarlyLoss: Boolean
 
   def cards(): Array[Card]
   def colors(): Array[Color]
@@ -52,6 +53,7 @@ object Rules {
     val maxScore = 25
     val maxNumber = 4
     val extraHintFromPlayingMax = true
+    val stopEarlyLoss = true
 
     val colorList: List[Color] = List(Red,Yellow,Green,Blue,White)
     val maxColorId = colorList.map(color => color.id).reduceLeft(math.max)

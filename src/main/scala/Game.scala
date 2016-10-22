@@ -27,7 +27,8 @@ object Game {
       hands = Array.fill(rules.numPlayers)(Hand(rules.handSize)),
       nextPlayable = nextPlayable,
       numCardRemaining = numCardRemaining,
-      revHistory = List()
+      revHistory = List(),
+      debugPath = None
     )
   }
 
@@ -48,7 +49,8 @@ object Game {
       hands = that.hands.map { hand => Hand(hand) },
       nextPlayable = that.nextPlayable.clone(),
       numCardRemaining = that.numCardRemaining.clone(),
-      revHistory = that.revHistory
+      revHistory = that.revHistory,
+      debugPath = that.debugPath
     )
   }
 
@@ -70,7 +72,8 @@ class Game private (
   val hands: Array[Hand],
   val nextPlayable: Array[Int], //Indexed by ColorId
   val numCardRemaining: Array[Int], //Number of this card remaining in deck or hand, indexed by card.arrayIdx
-  val revHistory: List[SeenAction]
+  val revHistory: List[SeenAction],
+  var debugPath: Option[List[GiveAction]]
 ) {
 
   val possibleHintTypes = rules.possibleHintTypes()
@@ -172,6 +175,14 @@ class Game private (
     if(finalTurnsLeft > 0)
       finalTurnsLeft -= 1
     turnNumber += 1
+
+    debugPath = debugPath match {
+      case None => None
+      case Some(Nil) => None
+      case Some(action::rest) =>
+        if(action != ga) None
+        else Some(rest)
+    }
   }
 
   def replaceSeenMap(newSeenMap: SeenMap): Unit = {
@@ -210,13 +221,15 @@ class Game private (
 
   def isDone(): Boolean = {
     numBombs > rules.maxBombs ||
-    numDiscarded > rules.maxDiscards ||
-    numPlayed >= rules.maxScore ||
     finalTurnsLeft == 0 ||
-    discarded.exists { cid =>
-      val card = seenMap(cid)
-      card.number >= nextPlayable(card.color.id) && numCardRemaining(card.arrayIdx) == 0
-    }
+    (rules.stopEarlyLoss && (
+      numDiscarded > rules.maxDiscards ||
+        numPlayed >= rules.maxScore ||
+        discarded.exists { cid =>
+          val card = seenMap(cid)
+          card.number >= nextPlayable(card.color.id) && numCardRemaining(card.arrayIdx) == 0
+        }
+    ))
   }
 
   def isWon(): Boolean = {
@@ -281,11 +294,11 @@ class Game private (
         }
 
         val appliedString = appliedTo.zipWithIndex.flatMap { case (b,hid) =>
-          if(b) Some((hid+1).toString)
+          if(b) Some(seenMap(hands(pid)(hid)).toString(useAnsiColors))
           else None
         }.mkString("")
 
-        "Hint P%d %s #%s".format(pid,hintString,appliedString)
+        "Hint P%d %s %s".format(pid,hintString,appliedString)
     }
   }
 

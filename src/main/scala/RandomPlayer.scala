@@ -29,10 +29,17 @@ package fireflower
   // [info] Score 25  Games:  0  Percent:  0.0%
   // [info] Average Utility: 1.3992
 
-object RandomPlayer {
+object RandomPlayer extends PlayerGen {
   def apply(seed: Long, myPid: Int, rules: Rules): RandomPlayer = {
     new RandomPlayer(seed,myPid,rules)
   }
+
+  def genPlayers(rules: Rules, seed: Long): Array[Player] = {
+    (0 to (rules.numPlayers-1)).map { myPid =>
+      this(seed,myPid,rules)
+    }.toArray
+  }
+
 }
 
 class RandomPlayer(val seed: Long, val myPid: Int, val rules: Rules) extends Player {

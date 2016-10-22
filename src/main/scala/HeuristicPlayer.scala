@@ -28,7 +28,7 @@ case class ProtectedSet(seqIdx: Int, info: ProtectedSetInfo) extends Belief
 case class JunkSetInfo(cids: Array[CardId]) extends BeliefInfo
 case class JunkSet(seqIdx: Int, info: JunkSetInfo) extends Belief
 
-object HeuristicPlayer {
+object HeuristicPlayer extends PlayerGen {
   def apply(rules: Rules): HeuristicPlayer = {
     new HeuristicPlayer(
       rules = rules,
@@ -56,6 +56,12 @@ object HeuristicPlayer {
       colors = that.colors
     )
   }
+
+  def genPlayers(rules: Rules, seed: Long): Array[Player] = {
+    (0 to (rules.numPlayers-1)).map { myPid =>
+      this(rules)
+    }.toArray
+  }
 }
 
 class HeuristicPlayer private (
@@ -75,6 +81,13 @@ class HeuristicPlayer private (
   //Beliefs we have about cards based on observations
   val beliefMap: CardPropertyMap[Belief]
 ) extends Player {
+
+  def debugging(game: Game): Boolean = {
+    game.debugPath match {
+      case None => false
+      case Some(_) => true
+    }
+  }
 
   //Update the seen maps based on a new incoming game state
   def updateSeenMap(game: Game): Unit = {
@@ -506,10 +519,10 @@ class HeuristicPlayer private (
         }
 
       val playsLeft = rules.maxScore - game.numPlayed
-      val netFreeHints = numPotentialHints * 0.9 + goodKnowledge - (fixupHintsRequired + playsLeft)
+      val netFreeHints = numPotentialHints * 0.9 + goodKnowledge - (fixupHintsRequired + playsLeft) - 2
 
       //How much of the remaining score are we not getting due to lack of hints
-      val hintScoreFactor = Math.max(0, (playsLeft.toDouble + 2.0 - softPlus(-netFreeHints,2.0)) / (playsLeft + 2.0))
+      val hintScoreFactor = Math.max(0, (playsLeft.toDouble + 3.0 - softPlus(-netFreeHints,3.0)) / (playsLeft + 3.0))
 
       //How much of the remaining score are we not getting due to lack of turns
       val turnsLeft = {
@@ -527,7 +540,7 @@ class HeuristicPlayer private (
         else
           acc
       }
-      val dangerFactor = Math.max(0.0, 1.0 - (dangerCount / 100.0))
+      val dangerFactor = Math.max(0.0, 1.0 - (dangerCount / 200.0))
 
       val bombsLeft = rules.maxBombs - game.numBombs
       val bombsFactor = {
@@ -537,7 +550,24 @@ class HeuristicPlayer private (
         else 0.0
       }
 
-      game.numPlayed + (rules.maxScore - game.numPlayed) * dangerFactor * turnsLeftFactor * hintScoreFactor * bombsFactor
+      val total =
+        game.numPlayed + (rules.maxScore - game.numPlayed) * dangerFactor * turnsLeftFactor * hintScoreFactor * bombsFactor
+      val expedTotal = Math.exp(total / 3.0)
+
+      if(debugging(game)) {
+        println("PotentHnt: %d, GoodKnow: %.2f, Fixup: %.2f, NetHnt: %.2f, HSF: %.3f".format(
+          numPotentialHints,goodKnowledge,fixupHintsRequired,netFreeHints,hintScoreFactor))
+        println("TurnsLeft: %d, TLF: %.3f".format(
+          turnsLeft, turnsLeftFactor))
+        println("DangerCount: %d, DF: %.3f".format(
+          dangerCount, dangerFactor))
+        println("BombsLeft: %d, BF: %.3f".format(
+          bombsLeft, bombsFactor))
+        println("ScoreLeft: %d, Total: %.3f, Exped: %.3f".format(
+          rules.maxScore - game.numPlayed, total, expedTotal))
+      }
+
+      expedTotal
     }
   }
 
@@ -556,12 +586,18 @@ class HeuristicPlayer private (
   def evalLikelyActionSimple(nextPid: PlayerId, game: Game, ga: GiveAction, assumingCards: List[(CardId,Card)]): Double = {
     val nextPlayer = HeuristicPlayer(this)
     val nextGame = Game(game)
-    assumingCards.foreach { case (cid,card) => nextGame.seenMap(cid) = card}
+    assumingCards.foreach { case (cid,card) => nextGame.seenMap(cid) = card }
     val sa = nextGame.seenAction(ga)
     nextGame.doAction(ga)
     nextPlayer.handleSeenAction(sa, nextGame.hiddenFor(nextPid))
     val nextAction = nextPlayer.likelyActionSimple(nextPid,nextGame)
     val eval = evalActions(game,List(ga,nextAction),assumingCards)
+
+    if(debugging(game)) {
+      println("Action " + game.giveActionToString(ga) +
+        " assume " + (assumingCards.map(_._2).map(_.toString(useAnsiColors=true)).mkString("")) +
+        " likely next: " + game.giveActionToString(nextAction) + " Eval: " + eval)
+    }
     eval
   }
 
@@ -586,6 +622,15 @@ class HeuristicPlayer private (
     var bestAction: GiveAction = GiveDiscard(0)
     var bestActionValue: Double = -10000.0
 
+    def recordAction(ga: GiveAction, value: Double) = {
+      if(value > bestActionValue) {
+        bestActionValue = value
+        bestAction = ga
+      }
+      if(debugging(game)) {
+        println("Action " + game.giveActionToString(ga) + " eval " + value)
+      }
+    }
 
     //Try all play actions
     playsNow.foreach { hid =>
@@ -599,32 +644,43 @@ class HeuristicPlayer private (
         sum += evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
       }
       val value = sum / possibles.length.toDouble
-      if(value > bestActionValue) {
-        bestActionValue = value
-        bestAction = ga
-      }
+      recordAction(ga,value)
     }
 
     //Try our most likely discard action
     if(game.numHints < rules.maxHints) {
       val (mld,dg) = mostLikelyDiscard(myPid,game,ck=false)
       val cid = game.hands(myPid)(mld)
-      val possibles = dg match {
-        case (DISCARD_PROVABLE_JUNK | DISCARD_JUNK | DISCARD_REGULAR) =>
-          possibleCards(cid,ck=false).filter { card => game.isJunk(card) }
-        case (DISCARD_USEFUL | DISCARD_PLAYABLE | DISCARD_MAYBE_GAMEOVER | DISCARD_GAMEOVER) =>
-          possibleCards(cid,ck=false)
+      val possiblesAndWeights = dg match {
+        case (DISCARD_PROVABLE_JUNK | DISCARD_JUNK) =>
+          possibleCards(cid,ck=false).map { card =>
+            if(game.isJunk(card)) (card,1.0)
+            else if(!game.isDangerous(card)) (card,0.1)
+            else (card,0.01)
+            }
+        case (DISCARD_REGULAR) =>
+          possibleCards(cid,ck=false).map { card =>
+            if(game.isJunk(card)) (card,1.0)
+            else if(!game.isDangerous(card)) (card,0.7)
+            else (card,0.02)
+          }
+        case (DISCARD_USEFUL | DISCARD_PLAYABLE) =>
+          possibleCards(cid,ck=false).map { card =>
+            if(!game.isDangerous(card)) (card,1.0)
+            else (card,0.1)
+          }
+        case (DISCARD_MAYBE_GAMEOVER | DISCARD_GAMEOVER) =>
+          possibleCards(cid,ck=false).map { card => (card,1.0) }
       }
       val ga = GiveDiscard(mld)
       var sum = 0.0
-      val evals = possibles.foreach { card =>
-        sum += evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
+      var wsum = 0.0
+      val evals = possiblesAndWeights.foreach { case (card,weight) =>
+        sum += weight * evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
+        wsum += weight
       }
-      val value = sum / possibles.length.toDouble
-      if(value > bestActionValue) {
-        bestActionValue = value
-        bestAction = ga
-      }
+      val value = sum / wsum
+      recordAction(ga,value)
     }
 
     //Try all hint actions
@@ -633,10 +689,7 @@ class HeuristicPlayer private (
         val ga = GiveHint(nextPid,hint)
         if(game.isLegal(ga)) {
           val value = evalLikelyActionSimple(nextPid,game,ga,assumingCards=List())
-          if(value > bestActionValue) {
-            bestActionValue = value
-            bestAction = ga
-          }
+          recordAction(ga,value)
         }
       }
     }

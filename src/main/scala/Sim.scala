@@ -5,10 +5,12 @@ object Sim {
     rules: Rules,
     gameSeed: Long,
     playerSeed: Long,
-    players: Array[Player],
+    playerGen: PlayerGen,
     doPrint: Boolean,
-    useAnsiColors: Boolean
+    useAnsiColors: Boolean,
+    debugTurnAndPath: Option[(Int,List[GiveAction])]
   ): Game = {
+    val players = playerGen.genPlayers(rules,playerSeed)
     if(players.length != rules.numPlayers)
       throw new Exception("players.length (%d) != rules.numPlayers (%d)".format(players.length,rules.numPlayers))
 
@@ -23,6 +25,13 @@ object Sim {
     }
 
     while(!game.isDone()) {
+      debugTurnAndPath.foreach { case (turn,path) =>
+        if(game.turnNumber == turn)
+          game.debugPath = Some(path)
+        else
+          game.debugPath = None
+      }
+
       val player = players(game.curPlayer)
       val ga = player.getAction(game.hiddenFor(game.curPlayer))
       if(!game.isLegal(ga)) {
@@ -41,14 +50,13 @@ object Sim {
 
     if(doPrint) {
       println(game.toString(useAnsiColors))
-      println("Score: " + game.numPlayed)
     }
     game
   }
 
   def runSingle(
     rules: Rules,
-    players: Long => Array[Player],
+    playerGen: PlayerGen,
     doPrint: Boolean,
     useAnsiColors: Boolean
   ): Game = {
@@ -59,66 +67,63 @@ object Sim {
       rules = rules,
       gameSeed = gameSeed,
       playerSeed = playerSeed,
-      players = players(playerSeed),
+      playerGen = playerGen,
       doPrint = doPrint,
-      useAnsiColors = useAnsiColors
+      useAnsiColors = useAnsiColors,
+      debugTurnAndPath = None
     )
   }
 
   def runMulti(
+    name: String,
     rules: Rules,
-    reps: Int,
+    numGames: Int,
     runSeed: Long,
-    players: Long => Array[Player],
+    playerGen: PlayerGen,
     doPrint: Boolean,
     doPrintDetails: Boolean,
     useAnsiColors: Boolean
   ): List[Game] = {
+    if(doPrint)
+      println(name + " starting " + numGames + " games, runSeed: " + runSeed)
+
     val rand = Rand(runSeed)
     val games =
-      (1 to reps).map { _ =>
+      (0 to (numGames-1)).map { i =>
         val gameSeed = rand.nextLong()
         val playerSeed = rand.nextLong()
-        runSingle(
+        val game = runSingle(
           rules = rules,
           gameSeed = gameSeed,
           playerSeed = playerSeed,
-          players = players(playerSeed),
+          playerGen = playerGen,
           doPrint = doPrintDetails,
-          useAnsiColors = useAnsiColors
+          useAnsiColors = useAnsiColors,
+          debugTurnAndPath = None
         )
+        if(doPrint)
+          println(name + " Game " + i + " Score: " + game.numPlayed + " GameSeed: " + gameSeed)
+        game
       }.toList
-
-    if(doPrint) {
-      val scoreTable = (0 to rules.maxScore).map { score =>
-        (score,games.count(game => game.numPlayed == score))
-      }
-      scoreTable.foreach { case (score,count) =>
-        println("Score %2d  Games: %2d  Percent: %4.1f%%".format(score, count, count.toDouble * 100.0 / reps))
-      }
-      val avgUtility = scoreTable.foldLeft(0) { case (acc,(score,count)) =>
-        acc + count * (if(score == rules.maxScore) score * 4 else score * 2)
-      }.toDouble / reps
-      println("Average Utility: " + avgUtility)
-    }
-
     games
   }
 
   def runMulti(
+    name: String,
     rules: Rules,
-    reps: Int,
-    players: Long => Array[Player],
+    numGames: Int,
+    playerGen: PlayerGen,
     doPrint: Boolean,
     doPrintDetails: Boolean,
     useAnsiColors: Boolean
   ): List[Game] = {
     val rand = Rand()
     runMulti(
+      name = name,
       rules = rules,
-      reps = reps,
+      numGames = numGames,
       runSeed = rand.nextLong(),
-      players = players,
+      playerGen = playerGen,
       doPrint = doPrint,
       doPrintDetails = doPrintDetails,
       useAnsiColors = useAnsiColors
