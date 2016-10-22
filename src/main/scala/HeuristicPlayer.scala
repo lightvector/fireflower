@@ -476,47 +476,56 @@ class HeuristicPlayer private (
           else
             0
         }
-      val fixupHintsRequired =
-        game.hands.foldLeft(0.0) { case (acc,hand) =>
-          hand.foldLeft(acc) { case (acc,cid) =>
-            val card = game.seenMap(cid)
-            if(card == Card.NULL)
-              0.0
-            else {
-              val possibles = possibleCards(cid,ck=true)
-              if(!provablyNotPlayable(possibles,game) && isBelievedPlayable(cid,now=true) && !game.isPlayable(card))
-                0.8
-              if(!provablyJunk(possibles,game) && isBelievedPlayable(cid,now=false) && !game.isUseful(card))
-                0.6
-              else if(!provablyJunk(possibles,game) && isBelievedUseful(cid) && !game.isUseful(card))
-                0.4
-              else if(!provablyUseful(possibles,game) && isBelievedJunk(cid) && game.isDangerous(card))
-                0.8
-              else
-                0.0
-            }
-          }
-        }
-      val goodKnowledge =
-        game.hands.foldLeft(0.0) { case (acc,hand) =>
-          hand.foldLeft(acc) { case (acc,cid) =>
-            val card = game.seenMap(cid)
-            if(isBelievedPlayable(cid,now=true) && (card == Card.NULL || game.isPlayable(card)))
-              0.8
-            //TODO make this better
-            else if(!isBelievedPlayable(cid,now=true) && isBelievedPlayable(cid,now=false) &&
-              (card == Card.NULL || (!game.isPlayable(card) && game.isUseful(card))))
-              0.8
-            else if(isBelievedUseful(cid) && (card != Card.NULL && game.isDangerous(card)))
-              0.6
-            else if(isBelievedUseful(cid) && (card == Card.NULL || game.isUseful(card)))
-              0.3
-            else if(isBelievedJunk(cid) && (card == Card.NULL || game.isJunk(card)))
-              0.1
-            else
-              0.0
-          }
-        }
+      //TODO these don't help much or they hurt!
+      val fixupHintsRequired = 0.0
+        // game.hands.foldLeft(0.0) { case (acc,hand) =>
+        //   hand.foldLeft(0.0) { case (acc,cid) =>
+        //     val card = game.seenMap(cid)
+        //     val value = {
+        //       if(card == Card.NULL)
+        //         0.0
+        //       else {
+        //         val possibles = possibleCards(cid,ck=true)
+        //         if(!provablyNotPlayable(possibles,game) && isBelievedPlayable(cid,now=true) && !game.isPlayable(card))
+        //           0.8
+        //         if(!provablyJunk(possibles,game) && isBelievedPlayable(cid,now=false) && !game.isUseful(card))
+        //           0.6
+        //         else if(!provablyJunk(possibles,game) && isBelievedUseful(cid) && !game.isUseful(card))
+        //           0.4
+        //         else if(!provablyUseful(possibles,game) && isBelievedJunk(cid) && game.isDangerous(card))
+        //           0.8
+        //         else
+        //           0.0
+        //       }
+        //     }
+        //     //TODO this is buggy due to not adding acc
+        //     value
+        //   }
+        // }
+      val goodKnowledge = 0.0
+        // game.hands.foldLeft(0.0) { case (acc,hand) =>
+        //   hand.foldLeft(0.0) { case (acc,cid) =>
+        //     val card = game.seenMap(cid)
+        //     val value = {
+        //       if(isBelievedPlayable(cid,now=true) && (card == Card.NULL || game.isPlayable(card)))
+        //         0.8
+        //       //TODO make this better
+        //       else if(!isBelievedPlayable(cid,now=true) && isBelievedPlayable(cid,now=false) &&
+        //         (card == Card.NULL || (!game.isPlayable(card) && game.isUseful(card))))
+        //         0.8
+        //       else if(isBelievedUseful(cid) && (card != Card.NULL && game.isDangerous(card)))
+        //         0.6
+        //       else if(isBelievedUseful(cid) && (card == Card.NULL || game.isUseful(card)))
+        //         0.3
+        //       else if(isBelievedJunk(cid) && (card == Card.NULL || game.isJunk(card)))
+        //         0.1
+        //       else
+        //         0.0
+        //     }
+        //     //TODO this is buggy due to not adding acc
+        //     value
+        //   }
+        // }
 
       val playsLeft = rules.maxScore - game.numPlayed
       val netFreeHints = numPotentialHints * 0.9 + goodKnowledge - (fixupHintsRequired + playsLeft) - 2
@@ -553,11 +562,14 @@ class HeuristicPlayer private (
             true
           else (isBelievedUseful(cid) && !isBelievedPlayable(cid,now=false))
         }
-        if(numClogs >= rules.handSize) 0.7
-        else if(numClogs >= rules.handSize-1) 0.9
-        else if(numClogs >= rules.handSize-2) 0.97
-        else if(numClogs >= rules.handSize-3) 0.995
-        else 1.0
+        val value = {
+          if(numClogs >= rules.handSize) 0.7
+          else if(numClogs >= rules.handSize-1) 0.9
+          else if(numClogs >= rules.handSize-2) 0.97
+          else if(numClogs >= rules.handSize-3) 0.995
+          else 1.0
+        }
+        acc * value
       }
 
       val bombsLeft = rules.maxBombs - game.numBombs
