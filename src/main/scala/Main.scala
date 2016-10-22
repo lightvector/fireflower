@@ -13,7 +13,8 @@ object Sandbox {
       playerGen = HeuristicPlayer,
       doPrint = true,
       useAnsiColors = true,
-      debugTurnAndPath = Some((16,List()))
+      // debugTurnAndPath = Some((16,List(GiveHint(1,HintColor(Green)),GiveDiscard(2))))
+      debugTurnAndPath = Some((16,List(GiveHint(1,HintNumber(4)),GiveDiscard(2))))
       // debugTurnAndPath = Some((4,List(GiveHint(1,HintNumber(1)),GiveDiscard(3))))
       // debugTurnAndPath = Some((4,List(GiveDiscard(4),GiveDiscard(3))))
     )

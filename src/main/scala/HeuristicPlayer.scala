@@ -388,7 +388,7 @@ class HeuristicPlayer private (
           sh.hint match {
             case HintNumber(num) =>
               val allPossiblyPlayble = hintCids.forall { cid =>
-                val possibles = handPrePossiblesCKByCid(cid)
+                val possibles = possibleCards(cid,ck=true)
                 !provablyNotPlayable(possibles,postGame)
               }
               allPossiblyPlayble && hintCids.length > postGame.nextPlayable.count { n => n <= num }
@@ -415,7 +415,7 @@ class HeuristicPlayer private (
           //TODO this needs to be more sophisticated and take into account other hinted-as-plays cards
           //Cards that are provably playable come first in the ordering
           val (hintCidsProvable, hintCidsNotProvable): (Array[CardId],Array[CardId]) =
-            hintCids.partition { cid => provablyPlayable(handPrePossiblesCKByCid(cid),postGame) }
+            hintCids.partition { cid => provablyPlayable(possibleCards(cid,ck=true),postGame) }
           addBelief(PlaySequenceInfo(cids = hintCidsProvable ++ hintCidsNotProvable))
         }
         //Otherwise if all cards in the hint are provably unplayable and not provably junk,
