@@ -30,11 +30,16 @@ case class JunkSet(seqIdx: Int, info: JunkSetInfo) extends Belief
 
 object HeuristicPlayer extends PlayerGen {
   def apply(rules: Rules): HeuristicPlayer = {
+    val numCardsInitial = Array.fill(Card.maxArrayIdx)(0)
+    rules.cards().foreach { card =>
+      numCardsInitial(card.arrayIdx) += 1
+    }
     new HeuristicPlayer(
       rules = rules,
       possibleHintTypes = rules.possibleHintTypes(),
       maxHints = rules.maxHints,
       uniqueCards = rules.cards().distinct.toList,
+      numCardsInitial = numCardsInitial,
       seenMap = SeenMap.empty(rules),
       seenMapCK = SeenMap.empty(rules),
       hintedMap = CardPropertyMap(rules),
@@ -49,6 +54,7 @@ object HeuristicPlayer extends PlayerGen {
       possibleHintTypes = that.possibleHintTypes.clone(),
       maxHints = that.maxHints,
       uniqueCards = that.uniqueCards,
+      numCardsInitial = that.numCardsInitial,
       seenMap = SeenMap(that.seenMap),
       seenMapCK = SeenMap(that.seenMapCK),
       hintedMap = CardPropertyMap(that.hintedMap),
@@ -69,6 +75,7 @@ class HeuristicPlayer private (
   val possibleHintTypes: Array[GiveHintType],
   val maxHints: Int,
   val uniqueCards: List[Card],
+  val numCardsInitial: Array[Int],
   val colors: Array[Color],
 
   //Tracks what cards are visible by us
@@ -551,6 +558,11 @@ class HeuristicPlayer private (
           game.isDangerous(card) &&
           seenMap.numUnseenByCard(card.arrayIdx) == 1)
           acc + (rules.maxNumber - card.number)
+        else if(card.number >= game.nextPlayable(card.color.id) &&
+          numCardsInitial(card.arrayIdx) > 2 &&
+          game.numCardRemaining(card.arrayIdx) == 2 &&
+          seenMap.numUnseenByCard(card.arrayIdx) == 2)
+          acc + (rules.maxNumber - card.number) / 2
         else
           acc
       }
