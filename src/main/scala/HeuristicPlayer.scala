@@ -542,6 +542,24 @@ class HeuristicPlayer private (
       }
       val dangerFactor = Math.max(0.0, 1.0 - (dangerCount / 200.0))
 
+      val handClogFactor = game.hands.foldLeft(1.0) { case (acc,hand) =>
+        val numClogs = hand.count { cid =>
+          val card = game.seenMap(cid)
+          if(card != Card.NULL && game.isPlayable(card))
+            false
+          else if(card != Card.NULL && game.isDangerous(card))
+            true
+          else if(isBelievedUseful(cid) && card != Card.NULL && !game.isPlayable(card))
+            true
+          else (isBelievedUseful(cid) && !isBelievedPlayable(cid,now=false))
+        }
+        if(numClogs >= rules.handSize) 0.7
+        else if(numClogs >= rules.handSize-1) 0.9
+        else if(numClogs >= rules.handSize-2) 0.97
+        else if(numClogs >= rules.handSize-3) 0.995
+        else 1.0
+      }
+
       val bombsLeft = rules.maxBombs - game.numBombs
       val bombsFactor = {
         if(bombsLeft >= 3) 1.0
@@ -551,7 +569,7 @@ class HeuristicPlayer private (
       }
 
       val total =
-        game.numPlayed + (rules.maxScore - game.numPlayed) * dangerFactor * turnsLeftFactor * hintScoreFactor * bombsFactor
+        game.numPlayed + (rules.maxScore - game.numPlayed) * dangerFactor * turnsLeftFactor * hintScoreFactor * bombsFactor * handClogFactor
       val expedTotal = Math.exp(total / 3.0)
 
       if(debugging(game)) {
