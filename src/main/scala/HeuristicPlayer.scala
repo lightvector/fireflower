@@ -140,6 +140,9 @@ class HeuristicPlayer private (
   def provablyUseful(possibles: List[Card], game: Game): Boolean = {
     possibles.forall { card => game.isUseful(card) }
   }
+  def provablyNotDangerous(possibles: List[Card], game: Game): Boolean = {
+    possibles.forall { card => !game.isDangerous(card) }
+  }
   def provablyDangerous(possibles: List[Card], game: Game): Boolean = {
     possibles.forall { card => game.isDangerous(card) }
   }
@@ -399,10 +402,12 @@ class HeuristicPlayer private (
         //If the hint targets the most likely discard
         //AND (there are no cards that the player would have played OR the hint touches a card we would have played)
         //AND (it's not a number hint where common knowledge says at least one MUST be playable)
+        //AND (it's possible that the mld is a dangerous card after this hint)
         //then it's a protection hint.
         if(sh.appliedTo(preMLD) &&
           (prePossiblePlays.isEmpty || prePossiblePlays.exists { hid => sh.appliedTo(hid) }) &&
-          !numberHintWithPlay
+          !numberHintWithPlay &&
+          !provablyNotDangerous(possibleCards(preMLD,ck=true),postGame)
         ) {
           addBelief(ProtectedSetInfo(cids = hintCids))
         }
