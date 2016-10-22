@@ -131,9 +131,25 @@ class HeuristicPlayer private (
     if(seenCard != Card.NULL)
       List(seenCard)
     else {
+      //TODO use filterUniqueUnseen and test performance
       val possibles: List[Card] = sm.uniqueUnseen()
       hintedMap(cid).foldLeft(possibles) { case (possibles,hinted) =>
         possibles.filter { card => rules.isConsistent(hinted.info.sh.hint, hinted.applied, card) }
+      }
+    }
+  }
+
+  //If there is a unique possible value for this card, return it, else Card.NULL
+  def uniquePossible(cid: CardId, ck: Boolean): Card = {
+    var sm = seenMap
+    if(ck) sm = seenMapCK
+
+    val seenCard = sm(cid)
+    if(seenCard != Card.NULL)
+      seenCard
+    else {
+      sm.filterSingleUniqueUnseen { card =>
+        hintedMap(cid).forall { hinted => rules.isConsistent(hinted.info.sh.hint, hinted.applied, card) }
       }
     }
   }
@@ -205,11 +221,66 @@ class HeuristicPlayer private (
     return Card.NULL
   }
 
-  def isBelievedDangerous(cid: CardId, game: Game) = {
+  def isBelievedDangerous(cid: CardId, game: Game): Boolean = {
     val card = believedCard(cid)
     card != Card.NULL && game.isDangerous(card)
   }
 
+  //Check if to the best of our knowledge, based on what's actually visible and what we suspect, a given card will
+  //be playable once it gets reached in play sequence. NOT COMMON KNOWLEDGE!
+  def probablyCorrectlyBelievedPlayableSoon(cid: CardId, game: Game): Boolean = {
+    primeBelief(cid) match {
+      case None => false
+      case Some(_: ProtectedSet) => false
+      case Some(_: JunkSet) => false
+      case Some(b: PlaySequence) =>
+        if(b.seqIdx <= 0) {
+          val card = {
+            val known = uniquePossible(cid, ck=false)
+            if(known == Card.NULL) believedCard(cid) else known
+          }
+          if(card == Card.NULL)
+            false
+          else
+            game.isPlayable(card)
+        }
+        else {
+          //TODO this requires all cards involved in the hint up to this point to be good
+          //unless provably not
+          //Maybe allow for bad ordering if correction hints could be given
+
+          //Loop and see if the card becomes playable as we play in sequence
+          val simulatedNextPlayable = game.nextPlayable.clone()
+          def loopOk(seqIdx:Int, okIfStopHere:Boolean): Boolean = {
+            if(seqIdx > b.seqIdx)
+              okIfStopHere
+            else {
+              val cid = b.info.cids(seqIdx)
+              val card = {
+                val known = uniquePossible(cid, ck=false)
+                if(known == Card.NULL) believedCard(cid) else known
+              }
+
+              //Don't have a guess as to what the card is - can't say that it's playable soon
+              if(card == Card.NULL)
+                false
+              //It's playable next in sequence!
+              else if(simulatedNextPlayable(card.color.id) == card.number) {
+                simulatedNextPlayable(card.color.id) += 1
+                loopOk(seqIdx+1,true) //Loop again and if we stop here, it was playable, so good.
+              }
+              //It's provably junk if the earlier cards play as expected
+              else if(simulatedNextPlayable(card.color.id) > card.number) {
+                loopOk(seqIdx+1,false) //Loop again and if we stop here, it wasn't playable, so not good.
+              }
+              //TODO maybe add a case for provably not being the next card to play...?
+              else false
+            }
+          }
+          loopOk(0,false)
+        }
+    }
+  }
 
   type DiscardGoodness = Int
   val DISCARD_PROVABLE_JUNK: DiscardGoodness = 6
@@ -541,30 +612,28 @@ class HeuristicPlayer private (
         //     value
         //   }
         // }
-      val goodKnowledge = 0.0
-        // game.hands.foldLeft(0.0) { case (acc,hand) =>
-        //   hand.foldLeft(0.0) { case (acc,cid) =>
-        //     val card = game.seenMap(cid)
-        //     val value = {
-        //       if(isBelievedPlayable(cid,now=true) && (card == Card.NULL || game.isPlayable(card)))
-        //         0.8
-        //       //TODO make this better
-        //       else if(!isBelievedPlayable(cid,now=true) && isBelievedPlayable(cid,now=false) &&
-        //         (card == Card.NULL || (!game.isPlayable(card) && game.isUseful(card))))
-        //         0.8
-        //       else if(isBelievedUseful(cid) && (card != Card.NULL && game.isDangerous(card)))
-        //         0.6
-        //       else if(isBelievedUseful(cid) && (card == Card.NULL || game.isUseful(card)))
-        //         0.3
-        //       else if(isBelievedJunk(cid) && (card == Card.NULL || game.isJunk(card)))
-        //         0.1
-        //       else
-        //         0.0
-        //     }
-        //     //TODO this is buggy due to not adding acc
-        //     value
-        //   }
-        // }
+      val goodKnowledge =
+        game.hands.foldLeft(0.0) { case (acc,hand) =>
+          hand.foldLeft(acc) { case (acc,cid) =>
+            //TODO here and other places we use seenmap, consider using uniquePossible
+            val card = game.seenMap(cid)
+            val value = {
+              if(probablyCorrectlyBelievedPlayableSoon(cid,game))
+                0.5
+              //TODO also add to the "isBelievedProtected(cid)" condition a check for whether it is
+              //provably (ck=true) dangerous, or perhaps just whether the card is known exactly
+              else if(isBelievedProtected(cid) && (card != Card.NULL && game.isDangerous(card)))
+                0.2
+              //TODO try stuff like this
+              //else if(isBelievedJunk(cid) && (card == Card.NULL || game.isJunk(card)))
+              //  0.1
+              //TODO also try adding a bonus for knowing a card exactly if it's useful
+              else
+                0.0
+            }
+            acc + value
+          }
+        }
 
       val playsLeft = rules.maxScore - game.numPlayed
       val netFreeHints = numPotentialHints * 0.9 + goodKnowledge - (fixupHintsRequired + playsLeft) - 2

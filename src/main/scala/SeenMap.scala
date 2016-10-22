@@ -81,4 +81,32 @@ class SeenMap private (
         None
     }.toList
   }
+
+  //Get a list of the unique cards that have at least one unseen, filtering it in the process
+  def filterUniqueUnseen(f: Card => Boolean): List[Card] = {
+    (0 to (distinctCards.length-1)).flatMap { i =>
+      if(numUnseenByCard(distinctCards(i).arrayIdx) > 0 && f(distinctCards(i)))
+        Some(distinctCards(i))
+      else
+        None
+    }.toList
+  }
+
+  //If there is a single unique unseen card for which f is true, return it, else return Card.NULL
+  def filterSingleUniqueUnseen(f: Card => Boolean): Card = {
+    def loop(i:Int, matched:Card): Card = {
+      if(i == distinctCards.length)
+        matched
+      else {
+        val curIsMatch = numUnseenByCard(distinctCards(i).arrayIdx) > 0 && f(distinctCards(i))
+        if(curIsMatch && matched == Card.NULL)
+          loop(i+1, distinctCards(i))
+        else if(curIsMatch)
+          Card.NULL
+        else
+          loop(i+1,matched)
+      }
+    }
+    loop(0,Card.NULL)
+  }
 }
