@@ -449,18 +449,35 @@ class HeuristicPlayer private (
           cidInHandAndCouldBePlayable(cid) = true
       }
     }
-    //Filter play sequences down to only these card ids
     postGame.hands.foreach { hand =>
       hand.foreach { cid =>
         primeBelief(cid) match {
           case None => ()
-          case Some(_: ProtectedSet) => ()
-          case Some(_: JunkSet) => ()
+          //Filter protected sets down to only cards that could be dangerous
+          case Some(b: ProtectedSet) =>
+            val (newCids,filteredCids) = b.info.cids.partition { cid => !provablyJunk(possibleCards(cid,ck=true),postGame) }
+            if(filteredCids.length > 0) {
+              addBelief(ProtectedSetInfo(cids = newCids))
+              addBelief(JunkSetInfo(cids = filteredCids))
+            }
+
+          //Filter junk sets down to only cards that could be safe
+          case Some(b: JunkSet) =>
+            val (newCids,filteredCids) = b.info.cids.partition { cid => !provablyDangerous(possibleCards(cid,ck=true),postGame) }
+            if(filteredCids.length > 0) {
+              addBelief(JunkSetInfo(cids = newCids))
+              addBelief(ProtectedSetInfo(cids = filteredCids))
+            }
+
+          //Filter play sequences down to only card ids that could be playable now
+          //TODO we can do better - allow playable soon
           case Some(b: PlaySequence) =>
             val (newCids,filteredCids) = b.info.cids.partition { cid => cidInHandAndCouldBePlayable(cid) }
             if(filteredCids.length > 0) {
+              val (protectCids,junkCids) = filteredCids.partition { cid => !provablyJunk(possibleCards(cid,ck=true),postGame) }
               addBelief(PlaySequenceInfo(cids = newCids))
-              addBelief(ProtectedSetInfo(cids = filteredCids))
+              addBelief(ProtectedSetInfo(cids = protectCids))
+              addBelief(JunkSetInfo(cids = junkCids))
             }
         }
       }
@@ -481,13 +498,23 @@ class HeuristicPlayer private (
       game.numPlayed.toDouble
     else {
       val numDiscardsLeft = rules.maxDiscards - game.numDiscarded
+      val numHints = game.numHints
+      val numHintsAdjusted = numHints
+      // TODO this helps on 3 and 4 player but hurts on 2-player!?
+      // val numHintsAdjusted =
+      //   if(numHints >= rules.maxHints) numHints - 0.70
+      //   else if(numHints == rules.maxHints-1) numHints - 0.25
+      //   else if(numHints == rules.maxHints-2) numHints - 0.05
+      //   else numHints - 0.00
+
       val numPotentialHints =
-        numDiscardsLeft + game.numHints + {
+        numDiscardsLeft + numHintsAdjusted + {
           if(rules.extraHintFromPlayingMax)
             colors.count { color => game.nextPlayable(color.id) <= rules.maxNumber }
           else
             0
         }
+
       //TODO these don't help much or they hurt!
       val fixupHintsRequired = 0.0
         // game.hands.foldLeft(0.0) { case (acc,hand) =>
