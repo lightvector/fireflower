@@ -750,6 +750,7 @@ class HeuristicPlayer private (
     if(playsNow.nonEmpty)
       GivePlay(playsNow.head)
     else {
+      //TODO this is sometimes illegal if hints are full!
       val (mld,dg) = mostLikelyDiscard(pid,game,ck=false)
       GiveDiscard(mld)
     }

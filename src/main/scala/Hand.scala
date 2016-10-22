@@ -17,6 +17,8 @@ class Hand private (
   var numCards: Int
 ) {
 
+  def length: Int = numCards
+
   def apply(hid: HandId): CardId = {
     cards(hid)
   }
