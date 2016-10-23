@@ -503,11 +503,8 @@ class HeuristicPlayer private (
       addBelief(ProtectedSetInfo(cids = hintCids))
     }
     //TODO this needs to be more sophisticated as well
-    //Otherwise if at least one card could be playable after the hint, then it's a play hint
-    else if(hintCids.exists { cid =>
-      val possibles = possibleCards(cid,ck=true)
-      !provablyNotPlayable(possibles,postGame)
-    }) {
+    //Otherwise if at least one card hinted could be playable after the hint, then it's a play hint
+    else if(hintCids.exists { cid => !provablyNotPlayable(possibleCards(cid,ck=true),postGame) }) {
       //TODO this needs to be more sophisticated and take into account other hinted-as-plays cards
       //Cards that are provably playable come first in the ordering
       val (hintCidsProvable, hintCidsNotProvable): (Array[CardId],Array[CardId]) =
@@ -521,6 +518,17 @@ class HeuristicPlayer private (
       provablyNotPlayable(possibles,postGame) && !provablyJunk(possibles,postGame)
     }) {
       addBelief(ProtectedSetInfo(cids = hintCids))
+    }
+    //Otherwise if all cards in the hint are provably junk, then it's a protection hint
+    //to all older cards that are not provably junk older than the oldest in the hint
+    else if(hintCids.forall { cid => provablyJunk(possibleCards(cid,ck=true),postGame) }) {
+      var oldestHintHid = 0
+      for(hid <- 0 to (sh.appliedTo.length-1)) {
+        if(sh.appliedTo(hid))
+          oldestHintHid = hid
+      }
+      val protectedCids = ((oldestHintHid+1) to (sh.appliedTo.length-1)).map { hid => postGame.hands(pid)(hid) }
+      addBelief(ProtectedSetInfo(cids = protectedCids.toArray))
     }
   }
 
