@@ -55,6 +55,16 @@ class Hand private (
     found
   }
 
+  def forall(f: CardId => Boolean): Boolean = {
+    var i = 0
+    var allgood = true
+    while(i < numCards && allgood) {
+      allgood = f(cards(i))
+      i += 1
+    }
+    allgood
+  }
+
   def foreach(f: CardId => Unit): Unit = {
     var i = 0
     while(i < numCards) {

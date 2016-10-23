@@ -72,8 +72,8 @@ class SeenMap private (
     }
   }
 
-  //Get a list of the unique cards that have at least one unseen
-  def uniqueUnseen(): List[Card] = {
+  //Get a list of the distinct cards that have at least one unseen
+  def distinctUnseen(): List[Card] = {
     (0 to (distinctCards.length-1)).flatMap { i =>
       if(numUnseenByCard(distinctCards(i).arrayIdx) > 0)
         Some(distinctCards(i))
@@ -82,8 +82,8 @@ class SeenMap private (
     }.toList
   }
 
-  //Get a list of the unique cards that have at least one unseen, filtering it in the process
-  def filterUniqueUnseen(f: Card => Boolean): List[Card] = {
+  //Get a list of the distinct cards that have at least one unseen, filtering it in the process
+  def filterDistinctUnseen(f: Card => Boolean): List[Card] = {
     (0 to (distinctCards.length-1)).flatMap { i =>
       if(numUnseenByCard(distinctCards(i).arrayIdx) > 0 && f(distinctCards(i)))
         Some(distinctCards(i))
@@ -92,8 +92,8 @@ class SeenMap private (
     }.toList
   }
 
-  //If there is a single unique unseen card for which f is true, return it, else return Card.NULL
-  def filterSingleUniqueUnseen(f: Card => Boolean): Card = {
+  //If there is a unique distinct unseen card for which f is true, return it, else return Card.NULL
+  def filterUniqueDistinctUnseen(f: Card => Boolean): Card = {
     def loop(i:Int, matched:Card): Card = {
       if(i == distinctCards.length)
         matched
@@ -109,4 +109,12 @@ class SeenMap private (
     }
     loop(0,Card.NULL)
   }
+
+  //Find if there is any unseen card for which f is true, else return Card.NULL
+  def existsUnseen(f: Card => Boolean): Boolean = {
+    distinctCards.exists { card =>
+      numUnseenByCard(card.arrayIdx) > 0 && f(card)
+    }
+  }
+
 }
