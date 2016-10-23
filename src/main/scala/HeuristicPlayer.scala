@@ -131,6 +131,9 @@ class HeuristicPlayer private (
     hintedMap(cid).forall { hinted => rules.isConsistent(hinted.info.sh.hint, hinted.applied, card) }
   }
 
+  //TODO this function is called frequently!
+  //Maybe we can memoize it - might be a decent speedup.
+
   //What cards could [cid] be as a strictly logical possiblity?
   //If ck is false, uses all information known.
   //If ck is true, uses only common knowledge information.
@@ -373,6 +376,11 @@ class HeuristicPlayer private (
     }.toList
   }
 
+  // TODO A major item that seems to sink the bot a lot right now is bad handling of discards and plays and bombs
+  // In particular, things like preferring to discard more after the opponent as (via not hinting you) signalled
+  // that your hand is safer than you think. Or understanding that drawing new cards yourself means less clogging
+  // of your partner later. Etc.
+
   //Handle a discard that we've seen, updating info and beliefmaps.
   //Assumes seenMap is already updated, but nothing else.
   def handleSeenDiscard(sd: SeenDiscard, postGame: Game): Unit = {
@@ -441,9 +449,11 @@ class HeuristicPlayer private (
   // - chaining of hints (hint something playable AFTER another card not played)
   //   Useful in 2 player to avoid discards and such, or to hint multiple 2s if you know
   //   you can play the last 1 in time, etc
+  //   We might need to make the data structure for playable sequence more complex (a DAG instead of a List?)
   // - discard playable means someone else should play it
   // - hint to cause someone to bomb also indicates protection
   // - finesses/crossovers (for 3p and higher)
+
 
   //Handle a hint that we've seen, updating info and beliefmaps.
   //Assumes seenMap is already updated, but nothing else.
@@ -642,7 +652,7 @@ class HeuristicPlayer private (
 
 
   def softPlus(x: Double, width: Double) = {
-    if(x/width >= 40.0)
+    if(x/width >= 40.0) //To avoid floating point overflow
       40.0
     else
       Math.log(1.0 + Math.exp(x/width)) * width
@@ -693,33 +703,29 @@ class HeuristicPlayer private (
         }
       }
 
-      //TODO these don't help much or they hurt!
-      val fixupHintsRequired = 0.0
-      // val fixupHintsRequired =
-      //   game.hands.foldLeft(0.0) { case (acc,hand) =>
-      //     hand.foldLeft(0.0) { case (acc,cid) =>
-      //       val card = game.seenMap(cid)
-      //       val value = {
-      //         if(card == Card.NULL)
-      //           0.0
-      //         else {
-      //           val possibles = possibleCards(cid,ck=true)
-      //           if(!provablyNotPlayable(possibles,game) && isBelievedPlayable(cid,now=true) && !game.isPlayable(card))
-      //             0.8
-      //           if(!provablyJunk(possibles,game) && isBelievedPlayable(cid,now=false) && !game.isUseful(card))
-      //             0.6
-      //           else if(!provablyJunk(possibles,game) && isBelievedUseful(cid) && !game.isUseful(card))
-      //             0.4
-      //           else if(!provablyUseful(possibles,game) && isBelievedJunk(cid) && game.isDangerous(card))
-      //             0.8
-      //           else
-      //             0.0
-      //         }
-      //       }
-      //       //TODO this is buggy due to not adding acc
-      //       value
-      //     }
-      //   }
+      val fixupHintsRequired =
+        game.hands.foldLeft(0.0) { case (acc,hand) =>
+          hand.foldLeft(acc) { case (acc,cid) =>
+            val card = game.seenMap(cid)
+            val value = {
+              if(card == Card.NULL)
+                0.0
+              else {
+                val possibles = possibleCards(cid,ck=true)
+                if(!provablyNotPlayable(possibles,game) &&
+                  isBelievedPlayable(cid,now=true) &&
+                  !game.isPlayable(card) &&
+                  !game.isDangerous(card) //This because danger we often have to hint anyways, so no cost to have to fixup
+                )
+                  0.3
+                else
+                  0.0
+              }
+            }
+            acc + value
+          }
+        }
+
       val goodKnowledge =
         game.hands.foldLeft(0.0) { case (acc,hand) =>
           hand.foldLeft(acc) { case (acc,cid) =>
