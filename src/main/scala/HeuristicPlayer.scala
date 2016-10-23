@@ -574,6 +574,8 @@ class HeuristicPlayer private (
     else {
       val numDiscardsLeft = rules.maxDiscards - game.numDiscarded
       val numHints = game.numHints
+      val numUnknownHintsGiven = game.numUnknownHintsGiven
+
       val numHintsAdjusted = numHints
       // TODO this helps on 3 and 4 player but hurts on 2-player!?
       // val numHintsAdjusted =
@@ -582,13 +584,18 @@ class HeuristicPlayer private (
       //   else if(numHints == rules.maxHints-2) numHints - 0.05
       //   else numHints - 0.00
 
-      val numPotentialHints =
-        numDiscardsLeft + numHintsAdjusted + {
+      val numPotentialHints = {
+        numDiscardsLeft +
+        numHintsAdjusted +
+        //Assume that unknown hints gain some value, even if we don't know what would be hinted
+        numUnknownHintsGiven * 0.1 +
+        {
           if(rules.extraHintFromPlayingMax)
             colors.count { color => game.nextPlayable(color.id) <= rules.maxNumber }
           else
             0
         }
+      }
 
       //TODO these don't help much or they hurt!
       val fixupHintsRequired = 0.0
@@ -765,26 +772,45 @@ class HeuristicPlayer private (
     val sa = nextGame.seenAction(ga)
     nextGame.doAction(ga)
     nextPlayer.handleSeenAction(sa, nextGame.hiddenFor(nextPid))
-    val nextAction = nextPlayer.likelyActionSimple(nextPid,nextGame)
-    val eval = evalActions(game,List(ga,nextAction),assumingCards)
+    val nextActions = nextPlayer.likelyActionsSimple(nextPid,nextGame)
 
-    if(debugging(game)) {
-      println("Action " + game.giveActionToString(ga) +
-        " assume " + (assumingCards.map(_._2).map(_.toString(useAnsiColors=true)).mkString("")) +
-        " likely next: " + game.giveActionToString(nextAction) + " Eval: " + eval)
+    var sum = 0.0
+    nextActions.foreach { case (nextAction,prob) =>
+      val eval = evalActions(game,List(ga,nextAction),assumingCards)
+      sum += eval * prob
+      if(debugging(game)) {
+        println("Action " + game.giveActionToString(ga) +
+          " assume " + (assumingCards.map(_._2).map(_.toString(useAnsiColors=true)).mkString("")) +
+          " likely next: " + game.giveActionToString(nextAction) + " Prob: " + prob + " Eval: " + eval)
+      }
     }
-    eval
+    sum
   }
 
   //TODO make this better
-  def likelyActionSimple(pid: PlayerId, game: Game): GiveAction = {
+
+  //Returns a list of possible actions and probabilities for each
+  def likelyActionsSimple(pid: PlayerId, game: Game): List[(GiveAction,Double)] = {
     val playsNow: List[HandId] = possiblePlays(pid, game, now=true, ck=false)
     if(playsNow.nonEmpty)
-      GivePlay(playsNow.head)
+      List((GivePlay(playsNow.head),1.0))
+    else if(game.numHints >= rules.maxHints)
+      List((GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),1.0))
+    else if(game.numHints <= 0) {
+      val (mld,_dg) = mostLikelyDiscard(pid,game,ck=false)
+      List((GiveDiscard(mld),1.0))
+    }
     else {
-      //TODO this is sometimes illegal if hints are full!
-      val (mld,dg) = mostLikelyDiscard(pid,game,ck=false)
-      GiveDiscard(mld)
+      //TODO pretty inaccurate, make this smarter. Note though that the evaluation
+      //underestimates how good UnknownHint is because it doesn't do anything!
+      //TODO why is this only possible at such a low value?
+      //Assign a 2% probability to giving a hint
+      val (mld,_dg) = mostLikelyDiscard(pid,game,ck=false)
+      List(
+        // (GiveDiscard(mld),1.0)
+        (GiveDiscard(mld),0.98),
+        (GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),0.02)
+      )
     }
   }
 

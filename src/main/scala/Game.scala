@@ -18,6 +18,7 @@ object Game {
       numBombs = 0,
       numPlayed = 0,
       numDiscarded = 0,
+      numUnknownHintsGiven = 0,
       seenMap = seenMap,
       played = List(),
       discarded = List(),
@@ -40,6 +41,7 @@ object Game {
       numBombs = that.numBombs,
       numPlayed = that.numPlayed,
       numDiscarded = that.numDiscarded,
+      numUnknownHintsGiven = that.numUnknownHintsGiven,
       seenMap = SeenMap(that.seenMap),
       played = that.played,
       discarded = that.discarded,
@@ -63,6 +65,7 @@ class Game private (
   var numBombs: Int,
   var numPlayed: Int,
   var numDiscarded: Int,
+  var numUnknownHintsGiven: Int, //Used by the HeuristicPlayer
   var seenMap: SeenMap,
   var played: List[CardId],
   var discarded: List[CardId],
@@ -157,8 +160,12 @@ class Game private (
           if(numCardRemaining(cardArrayIdx) > 0)
             numCardRemaining(cardArrayIdx) -= 1
         }
-      case GiveHint(_,_) =>
+      case GiveHint(_,hint) =>
         numHints -= 1
+        hint match {
+          case UnknownHint => numUnknownHintsGiven += 1
+          case _ => ()
+        }
     }
 
     if(shouldDraw) {
