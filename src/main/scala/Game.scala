@@ -175,7 +175,7 @@ class Game private (
           deck = rest
           hands(curPlayer).add(cid)
           if(rest.isEmpty && finalTurnsLeft < 0)
-            finalTurnsLeft = rules.numPlayers
+            finalTurnsLeft = rules.numPlayers + 1 //+1 because will get 1 subtracted from it below
       }
     }
 
@@ -266,14 +266,22 @@ class Game private (
         None
     }.mkString("")
 
-    "T%3d HL %d NB %d ND %2d Played %s %s danger %s".format(
+    val endRoundString = {
+      if(finalTurnsLeft >= 0)
+        "final" + finalTurnsLeft
+      else
+        ""
+    }
+
+    "T%3d HL %d NB %d ND %2d Played %s %s danger %s %s".format(
       turnNumber,
       numHints,
       numBombs,
       numDiscarded,
       playedString,
       handsString,
-      dangerString
+      dangerString,
+      endRoundString
     )
   }
 
