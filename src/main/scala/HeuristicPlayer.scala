@@ -551,10 +551,30 @@ class HeuristicPlayer private (
                 addBelief(ProtectedSetInfo(cids = filteredCids))
               }
 
-            //Filter play sequences down to only card ids that could be playable now
+            //Filter play sequences down to only card ids that could be playable in that sequence given the cards before
             case Some(b: PlaySequence) =>
               b.info.cids.foreach { cid => visited(cid) = true }
-              val (newCids,filteredCids) = b.info.cids.partition { cid => !provablyNotPlayable(possibleCards(cid,ck=true),postGame) }
+              var count = 0
+              var possiblePlaysUpToNow: List[Card] = List()
+              def possiblyPlayable(card: Card): Boolean = {
+                postGame.isPlayable(card) ||
+                possiblePlaysUpToNow.exists { c => c.color == card.color && c.number == card.number-1 }
+              }
+
+              val (newCids,filteredCids) = b.info.cids.partition { cid =>
+                count += 1
+                if(count == b.info.cids.length)
+                  possibleCards(cid,ck=true).exists { card => possiblyPlayable(card) }
+                else {
+                  val possiblePlays = possibleCards(cid,ck=true).filter { card => possiblyPlayable(card) }
+                  if(possiblePlays.isEmpty)
+                    false
+                  else {
+                    possiblePlaysUpToNow = possiblePlays ++ possiblePlaysUpToNow
+                    true
+                  }
+                }
+              }
               if(filteredCids.length > 0) {
                 val (protectCids,junkCids) = filteredCids.partition { cid => !provablyJunk(possibleCards(cid,ck=true),postGame) }
                 addBelief(PlaySequenceInfo(cids = newCids))
