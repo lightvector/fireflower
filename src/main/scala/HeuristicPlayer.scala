@@ -515,15 +515,6 @@ class HeuristicPlayer private (
         }
     }
 
-    //Find all card ids in a hand right now
-    val cidInHandAndCouldBePlayable: Array[Boolean] = Array.fill(rules.deckSize)(false)
-    postGame.hands.foreach { hand =>
-      hand.foreach { cid =>
-        val possibles = possibleCards(cid,ck=true)
-        if(!provablyNotPlayable(possibles,postGame))
-          cidInHandAndCouldBePlayable(cid) = true
-      }
-    }
     postGame.hands.foreach { hand =>
       hand.foreach { cid =>
         primeBelief(cid) match {
@@ -545,9 +536,8 @@ class HeuristicPlayer private (
             }
 
           //Filter play sequences down to only card ids that could be playable now
-          //TODO we can do better - allow playable soon
           case Some(b: PlaySequence) =>
-            val (newCids,filteredCids) = b.info.cids.partition { cid => cidInHandAndCouldBePlayable(cid) }
+            val (newCids,filteredCids) = b.info.cids.partition { cid => !provablyNotPlayable(possibleCards(cid,ck=true),postGame) }
             if(filteredCids.length > 0) {
               val (protectCids,junkCids) = filteredCids.partition { cid => !provablyJunk(possibleCards(cid,ck=true),postGame) }
               addBelief(PlaySequenceInfo(cids = newCids))
