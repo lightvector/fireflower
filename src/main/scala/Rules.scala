@@ -85,13 +85,17 @@ object Rules {
     }
 
     def hintApplies(hint: GiveHintType, card: Card): Boolean = {
-      if(card == Card.NULL)
-        throw new Exception("Null card used in Game.hintApplies")
       hint match {
         case HintColor(color) =>
+          if(card == Card.NULL)
+            throw new Exception("Null card used in Game.hintApplies")
           card.color == color
         case HintNumber(number) =>
+          if(card == Card.NULL)
+            throw new Exception("Null card used in Game.hintApplies")
           card.number == number
+        case UnknownHint =>
+          false
       }
     }
 
@@ -102,6 +106,7 @@ object Rules {
         case HintNumber(number) =>
           (card.number == number) == applied
         case HintSameColor | HintSameNumber | HintSame => true
+        case UnknownHint => true
       }
     }
   }

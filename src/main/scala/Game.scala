@@ -86,6 +86,8 @@ class Game private (
         hid >= 0 && hid < hands(curPlayer).numCards
       case GiveHint(pid,hint) =>
         numHints > 0 &&
+        pid != curPlayer &&
+        hint != UnknownHint &&
         possibleHintTypes.exists { ht => hint == ht } &&
         hands(pid).exists { cid => rules.hintApplies(hint,seenMap(cid)) }
     }
@@ -291,6 +293,8 @@ class Game private (
             "number"
           case HintSame =>
             ""
+          case UnknownHint =>
+            "UnknownHint"
         }
 
         val appliedString = appliedTo.zipWithIndex.flatMap { case (b,hid) =>
@@ -311,6 +315,7 @@ class Game private (
         val hintString = hint match {
           case HintColor(color) => color.toString()
           case HintNumber(number) => (number+1).toString()
+          case UnknownHint => "UnknownHint"
         }
         "Hint " + hintString
     }

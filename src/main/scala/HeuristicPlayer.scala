@@ -477,12 +477,16 @@ class HeuristicPlayer private (
           }
         }
 
+        //If this hint is an unknown hint, it does nothing
+        if(sh.hint == UnknownHint)
+        {}
         //If the hint targets the most likely discard
         //AND (there are no cards that the player would have played OR the hint touches a card we would have played)
         //AND (it's not a number hint where common knowledge says at least one MUST be playable)
         //AND (it's possible that the mld is a dangerous card after this hint)
         //then it's a protection hint.
-        if(sh.appliedTo(preMLD) &&
+        else if(
+          sh.appliedTo(preMLD) &&
           (prePossiblePlays.isEmpty || prePossiblePlays.exists { hid => sh.appliedTo(hid) }) &&
           !numberHintWithPlay &&
           !provablyNotDangerous(possibleCards(preMLD,ck=true),postGame)
@@ -588,30 +592,31 @@ class HeuristicPlayer private (
 
       //TODO these don't help much or they hurt!
       val fixupHintsRequired = 0.0
-        // game.hands.foldLeft(0.0) { case (acc,hand) =>
-        //   hand.foldLeft(0.0) { case (acc,cid) =>
-        //     val card = game.seenMap(cid)
-        //     val value = {
-        //       if(card == Card.NULL)
-        //         0.0
-        //       else {
-        //         val possibles = possibleCards(cid,ck=true)
-        //         if(!provablyNotPlayable(possibles,game) && isBelievedPlayable(cid,now=true) && !game.isPlayable(card))
-        //           0.8
-        //         if(!provablyJunk(possibles,game) && isBelievedPlayable(cid,now=false) && !game.isUseful(card))
-        //           0.6
-        //         else if(!provablyJunk(possibles,game) && isBelievedUseful(cid) && !game.isUseful(card))
-        //           0.4
-        //         else if(!provablyUseful(possibles,game) && isBelievedJunk(cid) && game.isDangerous(card))
-        //           0.8
-        //         else
-        //           0.0
-        //       }
-        //     }
-        //     //TODO this is buggy due to not adding acc
-        //     value
-        //   }
-        // }
+      // val fixupHintsRequired =
+      //   game.hands.foldLeft(0.0) { case (acc,hand) =>
+      //     hand.foldLeft(0.0) { case (acc,cid) =>
+      //       val card = game.seenMap(cid)
+      //       val value = {
+      //         if(card == Card.NULL)
+      //           0.0
+      //         else {
+      //           val possibles = possibleCards(cid,ck=true)
+      //           if(!provablyNotPlayable(possibles,game) && isBelievedPlayable(cid,now=true) && !game.isPlayable(card))
+      //             0.8
+      //           if(!provablyJunk(possibles,game) && isBelievedPlayable(cid,now=false) && !game.isUseful(card))
+      //             0.6
+      //           else if(!provablyJunk(possibles,game) && isBelievedUseful(cid) && !game.isUseful(card))
+      //             0.4
+      //           else if(!provablyUseful(possibles,game) && isBelievedJunk(cid) && game.isDangerous(card))
+      //             0.8
+      //           else
+      //             0.0
+      //         }
+      //       }
+      //       //TODO this is buggy due to not adding acc
+      //       value
+      //     }
+      //   }
       val goodKnowledge =
         game.hands.foldLeft(0.0) { case (acc,hand) =>
           hand.foldLeft(acc) { case (acc,cid) =>
@@ -647,6 +652,33 @@ class HeuristicPlayer private (
         else game.deck.length + rules.numPlayers
       }
       val turnsLeftFactor = Math.min(playsLeft.toDouble, 0.8 * turnsLeft) / playsLeft.toDouble
+
+      //TODO currently not good, test again later
+      // val discardLimitFactor = {
+      //   if(rules.numPlayers >= 4) {
+      //     if(game.numDiscarded > rules.maxDiscards) 0.500
+      //     else if(game.numDiscarded == rules.maxDiscards) 0.800
+      //     else if(game.numDiscarded == rules.maxDiscards-1) 0.920
+      //     else if(game.numDiscarded == rules.maxDiscards-2) 0.980
+      //     else if(game.numDiscarded == rules.maxDiscards-3) 0.995
+      //     else 1.000
+      //   }
+      //   else if(rules.numPlayers >= 3) {
+      //     if(game.numDiscarded > rules.maxDiscards) 0.500
+      //     else if(game.numDiscarded == rules.maxDiscards) 0.880
+      //     else if(game.numDiscarded == rules.maxDiscards-1) 0.960
+      //     else if(game.numDiscarded == rules.maxDiscards-2) 0.990
+      //     else if(game.numDiscarded == rules.maxDiscards-3) 0.998
+      //     else 1.000
+      //   }
+      //   else {
+      //     if(game.numDiscarded > rules.maxDiscards) 0.500
+      //     else if(game.numDiscarded == rules.maxDiscards) 0.920
+      //     else if(game.numDiscarded == rules.maxDiscards-1) 0.980
+      //     else if(game.numDiscarded == rules.maxDiscards-2) 0.995
+      //     else 1.000
+      //   }
+      // }
 
       //How much of the remaining score are we not getting due to danger stuff
       val dangerCount = uniqueCards.foldLeft(0) { case (acc,card) =>

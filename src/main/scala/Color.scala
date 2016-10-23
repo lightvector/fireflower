@@ -25,7 +25,7 @@ sealed trait Color extends Ordered[Color] {
       case Green => "G"
       case Blue => "B"
       case White => "W"
-      case Rainbow => "Z"
+      case MultiColor => "M"
       case NullColor => "?"
     }
   }
@@ -37,7 +37,7 @@ sealed trait Color extends Ordered[Color] {
       case Blue => "\u001B[34m"
       case Yellow => "\u001B[33m"
       case White => ""
-      case Rainbow => "\u001B[35m"
+      case MultiColor => "\u001B[35m"
       case NullColor => "\u001B[37m"
     }
   }
@@ -48,5 +48,5 @@ case object Yellow extends Color { val id = 1 }
 case object Green extends Color { val id = 2 }
 case object Blue extends Color { val id = 3 }
 case object White extends Color { val id = 4 }
-case object Rainbow extends Color { val id = 5 }
+case object MultiColor extends Color { val id = 5 }
 case object NullColor extends Color { val id = -1 }

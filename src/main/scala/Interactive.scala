@@ -78,8 +78,10 @@ object Interactive {
                 "a color"
               case HintSameNumber =>
                 "a number"
-                case HintSame =>
+              case HintSame =>
                 "something"
+              case UnknownHint =>
+                "unknown"
             }
             println("Hint player " + pid + " cards #" + appliedTo + " are " + hintString)
         }
