@@ -139,15 +139,8 @@ class HeuristicPlayer private (
     if(ck) sm = seenMapCK
 
     val seenCard = sm(cid)
-    if(seenCard != Card.NULL)
-      List(seenCard)
-    else {
-      //TODO use filterDistinctUnseen and test performance
-      val possibles: List[Card] = sm.distinctUnseen()
-      hintedMap(cid).foldLeft(possibles) { case (possibles,hinted) =>
-        possibles.filter { card => rules.isConsistent(hinted.info.sh.hint, hinted.applied, card) }
-      }
-    }
+    if(seenCard != Card.NULL) List(seenCard)
+    else sm.filterDistinctUnseen { card => allHintsConsistent(cid,card) }
   }
 
   //If there is a unique possible value for this card, return it, else Card.NULL
