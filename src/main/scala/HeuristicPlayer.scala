@@ -437,6 +437,14 @@ class HeuristicPlayer private (
     }
   }
 
+  //TODO some big items not yet implemented!
+  // - chaining of hints (hint something playable AFTER another card not played)
+  //   Useful in 2 player to avoid discards and such, or to hint multiple 2s if you know
+  //   you can play the last 1 in time, etc
+  // - discard playable means someone else should play it
+  // - hint to cause someone to bomb also indicates protection
+  // - finesses/crossovers (for 3p and higher)
+
   //Handle a hint that we've seen, updating info and beliefmaps.
   //Assumes seenMap is already updated, but nothing else.
   def handleSeenHint(sh: SeenHint, postGame: Game): Unit = {
@@ -731,7 +739,12 @@ class HeuristicPlayer private (
               else
                 0.0
             }
-            acc + value
+            //TODO possibly add a bonus for knowing color vs number?
+
+            //TODO this should probably be a bit higher
+            //Add a bonus for knowing the card exactly
+            val exactBonus = if(uniquePossible(cid,ck=true) != Card.NULL) 0.01 else 0.00
+            acc + value + exactBonus
           }
         }
 
@@ -747,6 +760,7 @@ class HeuristicPlayer private (
         softPlus(hintScoreFactorRaw,0.1)
       }
 
+      //TODO this has not been tested or tuned much
       //How much of the remaining score are we not getting due to lack of turns
       val turnsLeft = {
         if(game.finalTurnsLeft >= 0) game.finalTurnsLeft
@@ -804,6 +818,8 @@ class HeuristicPlayer private (
             false
           else if(card != Card.NULL && game.isDangerous(card))
             true
+          //TODO these need to be more intelligent and take into account cards playable soon as ok
+          //even if not playable now?
           else if(isBelievedUseful(cid) && card != Card.NULL && !game.isPlayable(card))
             true
           else (isBelievedUseful(cid) && !isBelievedPlayable(cid,now=false))
@@ -1014,6 +1030,7 @@ class HeuristicPlayer private (
       recordAction(ga,value)
     }
 
+    //TODO currently only hints the next player! No problem in 2p, but in 3p/4p...
     //Try all hint actions
     if(game.numHints > 0) {
       possibleHintTypes.foreach { hint =>
