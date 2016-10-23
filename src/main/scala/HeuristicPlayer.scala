@@ -662,10 +662,16 @@ class HeuristicPlayer private (
         }
 
       val playsLeft = rules.maxScore - game.numPlayed
-      val netFreeHints = numPotentialHints * 0.9 + goodKnowledge - (fixupHintsRequired + playsLeft) - 2
+
+      val netFreeHints =
+        numPotentialHints * 0.9 + goodKnowledge - (fixupHintsRequired + playsLeft) - 4
 
       //How much of the remaining score are we not getting due to lack of hints
-      val hintScoreFactor = Math.max(0, (playsLeft.toDouble + 3.0 - softPlus(-netFreeHints,3.0)) / (playsLeft + 3.0))
+      val hintScoreFactor = {
+        val hintScoreFactorRaw = (playsLeft.toDouble + 3.0 - softPlus(-netFreeHints,2.5)) / (playsLeft + 3.0)
+        //Avoid it going negative
+        softPlus(hintScoreFactorRaw,0.1)
+      }
 
       //How much of the remaining score are we not getting due to lack of turns
       val turnsLeft = {
