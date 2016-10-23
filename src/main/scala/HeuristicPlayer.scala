@@ -738,7 +738,7 @@ class HeuristicPlayer private (
         acc * value
       }
 
-      val bombsLeft = rules.maxBombs - game.numBombs
+      val bombsLeft = rules.maxBombs - game.numBombs + 1
       val bombsFactor = {
         if(bombsLeft >= 3) 1.0
         else if(bombsLeft == 2) 0.98
