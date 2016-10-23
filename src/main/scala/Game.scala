@@ -322,7 +322,7 @@ class Game private (
         val hintString = hint match {
           case HintColor(color) => color.toString()
           case HintNumber(number) => (number+1).toString()
-          case UnknownHint => "UnknownHint"
+          case UnknownHint => "Unknown"
         }
         "Hint " + hintString
     }

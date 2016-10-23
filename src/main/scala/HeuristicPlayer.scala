@@ -568,9 +568,23 @@ class HeuristicPlayer private (
       Math.log(1.0 + Math.exp(x/width)) * width
   }
 
+  //Maps from expected score space -> goodness space
+  //This is a bit of a hack, because otherwise the horizon effect makes the bot highly reluctant to discard
+  //due to fears of discarding the exact same card as partner is about to discard. By exping the values, we make
+  //the averaging of that scenario have less effect.
+  def transformEval(rawEval: Double) = {
+    Math.exp(rawEval / 3.0)
+  }
+  def untransformEval(eval: Double) = {
+    Math.log(eval) * 3.0
+  }
+  def evalToString(eval: Double) = {
+    "%.1f (%.3f)".format(eval,untransformEval(eval))
+  }
+
   def staticEvalGame(game: Game): Double = {
     if(game.isDone())
-      game.numPlayed.toDouble
+      transformEval(game.numPlayed.toDouble)
     else {
       val numDiscardsLeft = rules.maxDiscards - game.numDiscarded
       val numHints = game.numHints
@@ -732,12 +746,19 @@ class HeuristicPlayer private (
         else 0.0
       }
 
-      val total =
-        game.numPlayed + (rules.maxScore - game.numPlayed) * dangerFactor * turnsLeftFactor * hintScoreFactor * bombsFactor * handClogFactor
-      val expedTotal = Math.exp(total / 3.0)
+      val scoreLeft = rules.maxScore - game.numPlayed
+      val totalFactor = {
+        dangerFactor *
+        turnsLeftFactor *
+        hintScoreFactor *
+        bombsFactor *
+        handClogFactor
+      }
+      val raw = game.numPlayed + scoreLeft * totalFactor
+      val eval = transformEval(raw)
 
       if(debugging(game)) {
-        println("PotentHnt: %d, GoodKnow: %.2f, Fixup: %.2f, NetHnt: %.2f, HSF: %.3f".format(
+        println("PotentHnt: %.2f, GoodKnow: %.2f, Fixup: %.2f, NetHnt: %.2f, HSF: %.3f".format(
           numPotentialHints,goodKnowledge,fixupHintsRequired,netFreeHints,hintScoreFactor))
         println("TurnsLeft: %d, TLF: %.3f".format(
           turnsLeft, turnsLeftFactor))
@@ -745,11 +766,15 @@ class HeuristicPlayer private (
           dangerCount, dangerFactor))
         println("BombsLeft: %d, BF: %.3f".format(
           bombsLeft, bombsFactor))
-        println("ScoreLeft: %d, Total: %.3f, Exped: %.3f".format(
-          rules.maxScore - game.numPlayed, total, expedTotal))
+        println("HandClogF: %.3f".format(
+          handClogFactor))
+        println("ScoreLeft: %d, TotalFactor: %.3f".format(
+          scoreLeft, totalFactor))
+        println("Eval: %s".format(
+          evalToString(eval)))
       }
 
-      expedTotal
+      eval
     }
   }
 
@@ -779,9 +804,13 @@ class HeuristicPlayer private (
       val eval = evalActions(game,List(ga,nextAction),assumingCards)
       sum += eval * prob
       if(debugging(game)) {
-        println("Action " + game.giveActionToString(ga) +
-          " assume " + (assumingCards.map(_._2).map(_.toString(useAnsiColors=true)).mkString("")) +
-          " likely next: " + game.giveActionToString(nextAction) + " Prob: " + prob + " Eval: " + eval)
+        println("Action %-10s assume %s likely next: %-12s Prob: %.3f Eval: %s".format(
+          game.giveActionToString(ga),
+          (assumingCards.map(_._2).map(_.toString(useAnsiColors=true)).mkString("")),
+          game.giveActionToString(nextAction),
+          prob,
+          evalToString(eval)
+        ))
       }
     }
     sum
@@ -830,7 +859,10 @@ class HeuristicPlayer private (
         bestAction = ga
       }
       if(debugging(game)) {
-        println("Action " + game.giveActionToString(ga) + " eval " + value)
+        println("Action %-10s Eval: %s".format(
+          game.giveActionToString(ga),
+          evalToString(value)
+        ))
       }
     }
 

@@ -7,9 +7,9 @@ object Sandbox {
     //RandTest.test()
 
     val debugTurnAndPath = {
-      if(args.length >= 1) {
-        val turn = args(0).toInt
-        val pathstr = if(args.length >= 2) args(1) else ""
+      if(args.length >= 2) {
+        val turn = args(1).toInt
+        val pathstr = if(args.length >= 3) args(2) else ""
         val path = pathstr.split(",").filter(_.nonEmpty).map { s => GiveAction.ofString(s) }.toList
         Some((turn,path))
       }
@@ -19,8 +19,8 @@ object Sandbox {
 
     val _game = Sim.runSingle(
       rules = Rules.Standard(numPlayers=2),
-      gameSeed = 4956284275229322651L,
-      playerSeed = 7246858482769613123L,
+      gameSeed = args(0).toLong,
+      playerSeed = 0L,
       playerGen = HeuristicPlayer,
       doPrint = true,
       useAnsiColors = true,
