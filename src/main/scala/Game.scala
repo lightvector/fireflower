@@ -4,13 +4,28 @@ import RichImplicits._
 
 object Game {
   def apply(rules: Rules, seed: Long): Game = {
+    assert(rules.numPlayers >= 2)
+    assert(rules.handSize > 0)
+    assert(rules.deckSize >= rules.numPlayers * rules.handSize)
+    assert(rules.initialHints >= 0)
+    assert(rules.maxHints >= rules.initialHints)
+    assert(rules.maxBombs >= 0)
+    assert(rules.maxDiscards >= 0)
+    assert(rules.maxNumber >= 0)
+    assert(rules.maxNumber < Card.NUMBER_LIMIT)
+    assert(rules.maxScore == (rules.maxNumber+1) * rules.colors().length)
+    assert(rules.colors().length == rules.colors().distinct.length)
+    assert(rules.possibleHintTypes().length == rules.possibleHintTypes().distinct.length)
+
     val seenMap = SeenMap(rules,Rand(seed))
     val numCardRemaining = Array.fill(Card.maxArrayIdx)(0)
     val nextPlayable = Array.fill(Color.LIMIT)(-1)
     seenMap.cards.foreach { card =>
+      assert(card.number >= 0 && card.number <= rules.maxNumber)
       numCardRemaining(card.arrayIdx) += 1
       nextPlayable(card.color.id) = 0
     }
+
     new Game(
       rules = rules,
       turnNumber = 0,
@@ -110,18 +125,26 @@ class Game private (
     }
   }
 
+  def isKilledFromBelow(card: Card): Boolean = {
+    !rules.stopEarlyLoss && (nextPlayable(card.color.id) to (card.number-1)).exists { number =>
+      numCardRemaining(Card.arrayIdx(card.color,number)) <= 0
+    }
+  }
+
   def isPlayable(card: Card): Boolean = {
     nextPlayable(card.color.id) == card.number
   }
   def isUseful(card: Card): Boolean = {
-    nextPlayable(card.color.id) <= card.number
+    nextPlayable(card.color.id) <= card.number &&
+    !isKilledFromBelow(card)
   }
   def isDangerous(card: Card): Boolean = {
     nextPlayable(card.color.id) <= card.number &&
-    numCardRemaining(card.arrayIdx) <= 1
+    numCardRemaining(card.arrayIdx) <= 1 &&
+    !isKilledFromBelow(card)
   }
   def isJunk(card: Card): Boolean = {
-    nextPlayable(card.color.id) > card.number
+    nextPlayable(card.color.id) > card.number || isKilledFromBelow(card)
   }
 
   def doAction(ga: GiveAction): Unit = {

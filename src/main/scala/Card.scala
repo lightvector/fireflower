@@ -16,6 +16,10 @@ object Card {
 
   //Maximum possible card array index
   val maxArrayIdx: Int = Card.NUMBER_LIMIT * Color.LIMIT
+
+  def arrayIdx(color: Color, number: Int): Int = {
+    number +  Card.NUMBER_LIMIT * color.id
+  }
 }
 
 case class Card(

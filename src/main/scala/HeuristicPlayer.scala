@@ -675,12 +675,42 @@ class HeuristicPlayer private (
   def staticEvalGame(game: Game): Double = {
     if(isInconsistent)
       Double.NaN
-    else if(game.isDone())
-      transformEval(game.numPlayed.toDouble)
+    else if(game.isDone()) {
+      if(rules.stopEarlyLoss)
+        transformEval(game.numPlayed.toDouble)
+      else {
+        if(game.isWon())
+          transformEval(game.numPlayed.toDouble)
+        else
+          //Drop 3 for every point we missed the end by, for consistency with the during-game scoring.
+          transformEval(game.numPlayed.toDouble - 3.0 * (rules.maxScore - game.numPlayed))
+      }
+    }
     else {
       val numDiscardsLeft = rules.maxDiscards - game.numDiscarded
       val numHints = game.numHints
       val numUnknownHintsGiven = game.numUnknownHintsGiven
+
+      val turnsLeft = {
+        if(game.finalTurnsLeft >= 0) game.finalTurnsLeft
+        else game.deck.length + rules.numPlayers
+      }
+      val maxPlaysLeft = {
+        if(rules.stopEarlyLoss)
+          rules.maxScore - game.numPlayed
+        else {
+          var count = 0
+          colors.foreach { color =>
+            var number = game.nextPlayable(color.id)
+            while(game.numCardRemaining(Card.arrayIdx(color,number)) > 0 && number <= rules.maxNumber) {
+              count += 1
+              number += 1
+            }
+          }
+          Math.min(count,turnsLeft)
+        }
+      }
+      val lossGap = rules.maxScore - game.numPlayed - maxPlaysLeft
 
       val numHintsAdjusted = numHints
       // TODO this helps on 3 and 4 player but hurts on 2-player!?
@@ -754,25 +784,19 @@ class HeuristicPlayer private (
           }
         }
 
-      val playsLeft = rules.maxScore - game.numPlayed
-
       val netFreeHints =
-        numPotentialHints * 0.9 + goodKnowledge - (fixupHintsRequired + playsLeft) - 4
+        numPotentialHints * 0.9 + goodKnowledge - (fixupHintsRequired + maxPlaysLeft) - 4
 
       //How much of the remaining score are we not getting due to lack of hints
       val hintScoreFactor = {
-        val hintScoreFactorRaw = (playsLeft.toDouble + 3.0 - softPlus(-netFreeHints,2.5)) / (playsLeft + 3.0)
+        val hintScoreFactorRaw = (maxPlaysLeft.toDouble + 3.0 - softPlus(-netFreeHints,2.5)) / (maxPlaysLeft + 3.0)
         //Avoid it going negative
         softPlus(hintScoreFactorRaw,0.1)
       }
 
       //TODO this has not been tested or tuned much
       //How much of the remaining score are we not getting due to lack of turns
-      val turnsLeft = {
-        if(game.finalTurnsLeft >= 0) game.finalTurnsLeft
-        else game.deck.length + rules.numPlayers
-      }
-      val turnsLeftFactor = Math.min(playsLeft.toDouble, 0.8 * turnsLeft) / playsLeft.toDouble
+      val turnsLeftFactor = Math.min(maxPlaysLeft.toDouble, 0.8 * turnsLeft) / maxPlaysLeft.toDouble
 
       //TODO currently not good, test again later
       // val discardLimitFactor = {
@@ -848,7 +872,6 @@ class HeuristicPlayer private (
         else 0.0
       }
 
-      val scoreLeft = rules.maxScore - game.numPlayed
       val totalFactor = {
         dangerFactor *
         turnsLeftFactor *
@@ -856,7 +879,13 @@ class HeuristicPlayer private (
         bombsFactor *
         handClogFactor
       }
-      val raw = game.numPlayed + scoreLeft * totalFactor
+      val raw = {
+        if(rules.stopEarlyLoss)
+          game.numPlayed + maxPlaysLeft * totalFactor
+        else
+          game.numPlayed + maxPlaysLeft * totalFactor - 3.0 * lossGap
+      }
+
       val eval = transformEval(raw)
 
       if(debugging(game)) {
@@ -870,8 +899,8 @@ class HeuristicPlayer private (
           bombsLeft, bombsFactor))
         println("HandClogF: %.3f".format(
           handClogFactor))
-        println("ScoreLeft: %d, TotalFactor: %.3f".format(
-          scoreLeft, totalFactor))
+        println("PlaysLeft: %d, LossGap %d, TotalFactor: %.3f".format(
+          maxPlaysLeft, lossGap, totalFactor))
         println("Eval: %s".format(
           evalToString(eval)))
       }
@@ -976,6 +1005,9 @@ class HeuristicPlayer private (
         ))
       }
     }
+
+    //TODO allow trying to playing a card without knowing if it's playable if it could be playable
+    //such as at the end of the game when you know it's in your hand but you haven't been hinted.
 
     //Try all play actions
     playsNow.foreach { hid =>
