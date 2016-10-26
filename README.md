@@ -1,5 +1,9 @@
 # fireflower
 
+## Overview
+Fireflower is a bot-in-progress that plays (some variations of) the game Hanabi. Right now, in early stages and focusing mainly on two-player.
+Currently, wins 2-player a little more than 25% of the time, with an average score of 15-16.
+
 ## Getting started
 
 ### Setup
