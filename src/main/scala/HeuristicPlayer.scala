@@ -843,16 +843,37 @@ class HeuristicPlayer private (
 
       val handClogFactor = game.hands.foldLeft(1.0) { case (acc,hand) =>
         val numClogs = hand.count { cid =>
-          val card = game.seenMap(cid)
-          if(card != Card.NULL && game.isPlayable(card))
-            false
-          else if(card != Card.NULL && game.isDangerous(card))
-            true
-          //TODO these need to be more intelligent and take into account cards playable soon as ok
-          //even if not playable now?
-          else if(isBelievedUseful(cid) && card != Card.NULL && !game.isPlayable(card))
-            true
-          else (isBelievedUseful(cid) && !isBelievedPlayable(cid,now=false))
+          val card = seenMap(cid)
+          //We can't see the card - either in our hand or we're a simulation for that player
+          //This means it's safe to use ck=false, since we know no more than that player does, so whatever we
+          //prove can be proven by them too.
+          if(card == Card.NULL) {
+            val possibles = possibleCards(cid,ck=false)
+            if(provablyPlayable(possibles,game))
+              false
+            else if(isBelievedPlayable(cid,now=false))
+              false
+            else if(provablyJunk(possibles,game))
+              false
+            else if(provablyDangerous(possibles,game))
+              true
+            else
+              isBelievedUseful(cid) && !isBelievedPlayable(cid,now=false)
+          }
+          //We can actually see the card
+          else {
+            //TODO playable cards can sometimes clog a hand if they're hard to hint out and/or the
+            //player's current belief about them is wrong. Maybe experiment with this.
+            if(game.isPlayable(card))
+              false
+            else if(probablyCorrectlyBelievedPlayableSoon(cid,game))
+              false
+            else if(game.isDangerous(card))
+              true
+            //TODO should we count believed-playable junk cards as clogging?
+            else
+              isBelievedUseful(cid)
+          }
         }
         val value = {
           if(numClogs >= rules.handSize) 0.7
