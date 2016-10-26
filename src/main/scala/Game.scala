@@ -1,8 +1,22 @@
+/**
+  * Game.scala
+  * Implements the main hanabi game rules and mechanics!
+  * Fields in this class are visible externally, for use in the Hanabi AI players, like HeuristicPlayer,
+  * but generally they should NOT be modified, only read, so as to avoid accidentally ending up in an
+  * inconstent game state.
+  *
+  * By default, when a game is constructed, all cards, even the ones in the deck, are "seen" and visible.
+  * Actual running games will call hideFor(pid) prior to passing it off to each player to hide the cards
+  * that the given player shouldn't be able to see.
+  */
+
 package fireflower
 
 import RichImplicits._
 
 object Game {
+
+  //Construct a Game from the given rules and a seed for shuffling the deck.
   def apply(rules: Rules, seed: Long): Game = {
     assert(rules.numPlayers >= 2)
     assert(rules.handSize > 0)
@@ -48,6 +62,7 @@ object Game {
     )
   }
 
+  //Constuct a copy of this game that can be modified separately from the original.
   def apply(that: Game): Game = {
     new Game(
       rules = that.rules,
@@ -80,17 +95,30 @@ class Game private (
   var numBombs: Int,
   var numPlayed: Int,
   var numDiscarded: Int,
-  var numUnknownHintsGiven: Int, //Used by the HeuristicPlayer
+
+  //Used by the HeuristicPlayer to track how many hints it has given where it hasn't simulated the particular
+  //hint, so that it can account for the value that on average they are presumably worth later.
+  var numUnknownHintsGiven: Int,
+
   var seenMap: SeenMap,
   var played: List[CardId],
   var discarded: List[CardId],
   var deck: List[CardId],
   var curPlayer: PlayerId,
+  //This is -1, except once the deck runs out, where it is the number of turns left in the game, with the
+  //game ending when this hits 0.
   var finalTurnsLeft: Int,
+
   val hands: Array[Hand],
-  val nextPlayable: Array[Int], //Indexed by ColorId
-  val numCardRemaining: Array[Int], //Number of this card remaining in deck or hand, indexed by card.arrayIdx
+  //Indexed by ColorId, the next Number that is playable.
+  val nextPlayable: Array[Number],
+  //Number of this card remaining in deck or hand, indexed by card.arrayIdx
+  val numCardRemaining: Array[Int],
   val revHistory: List[SeenAction],
+
+  //Used by the HeuristicPlayer, to only print debug information tracing down a particular line of the search.
+  //The mechanism is that while this is Some, every GiveAction done pops the head of the list if it exactly
+  //matches the head of the list, else it sets this to None if it doesn't. When this is Some, debugging is on.
   var debugPath: Option[List[GiveAction]]
 ) {
 
@@ -266,6 +294,10 @@ class Game private (
 
   def isWon(): Boolean = {
     numPlayed == rules.maxScore
+  }
+
+  override def toString(): String = {
+    toString(useAnsiColors = false)
   }
 
   def toString(useAnsiColors: Boolean): String = {

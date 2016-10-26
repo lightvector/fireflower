@@ -17,7 +17,11 @@ abstract class Rules {
   val maxDiscards: Int
   val maxScore: Int
   val maxNumber: Int
+
+  //Do you get extra hints from playing 5s, or whatever the max number is?
   val extraHintFromPlayingMax: Boolean
+
+  //Stop the game immediately if a maxScore is not reachable any more?
   val stopEarlyLoss: Boolean
 
   def cards(): Array[Card]
@@ -26,6 +30,9 @@ abstract class Rules {
 
   def seenHint(hint: GiveHintType): SeenHintType
   def hintApplies(hint: GiveHintType, card: Card): Boolean
+
+  //Is it possible for a card to be [card] when in a hand where this hint was seen
+  //and the hint applied (or not) to this card?
   def isConsistent(hint: SeenHintType, applied: Boolean, card: Card): Boolean
 }
 

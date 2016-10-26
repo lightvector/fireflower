@@ -1,11 +1,23 @@
+/**
+  * HeuristicPlayer.scala
+  * Plays according to bunch of simple hardcoded conventions that dictate how cards are signaled
+  * as playable or discardable or protectworthy by hints or other actions.
+  *
+  * However, conventions mostly do not dictate the actions taken. Instead, those are computed by
+  * looping over all actions and running a pseudo-depth-2 search by predicting the opponent's likely
+  * action or actions and then running an evaluation function, and choosing the action that leads
+  * to the highest expected evaluation.
+  */
+
 package fireflower
 
 import RichImplicits._
 
-//Many of the following come in pairs, one shared between all cards that were involved
-//in the same event, and a second that contains the former as a field that actually
-//is the value that is tracked per-card.
-//Arrays are read-only
+//Below are a bunch of types for different kinds of beliefs or knowledge. Each comes in a pair,
+//with an "*Info" that is shared between all cards involved in that belief or piece of knowledge,
+//and a second type that contains the former as a field that is tracked per-card.
+
+//All the arrays in these information-related are read-only and should NOT be modified.
 
 //The shared information between all cards connected in a belief
 sealed trait BeliefInfo
@@ -29,7 +41,11 @@ case class ProtectedSet(seqIdx: Int, info: ProtectedSetInfo) extends Belief
 case class JunkSetInfo(cids: Array[CardId]) extends BeliefInfo
 case class JunkSet(seqIdx: Int, info: JunkSetInfo) extends Belief
 
+
+//Basic constructors and other static functions for the player
 object HeuristicPlayer extends PlayerGen {
+
+  //Construct a HeuristicPlayer for the given rule set
   def apply(rules: Rules): HeuristicPlayer = {
     val numCardsInitial = Array.fill(Card.maxArrayIdx)(0)
     rules.cards().foreach { card =>
@@ -50,6 +66,7 @@ object HeuristicPlayer extends PlayerGen {
     )
   }
 
+  //Copy constructor
   def apply(that: HeuristicPlayer): HeuristicPlayer = {
     new HeuristicPlayer(
       rules = that.rules,
@@ -66,6 +83,7 @@ object HeuristicPlayer extends PlayerGen {
     )
   }
 
+  //PlayerGen interface - Generate a set of players for a game.
   def genPlayers(rules: Rules, seed: Long): Array[Player] = {
     (0 to (rules.numPlayers-1)).map { myPid =>
       this(rules)
@@ -75,11 +93,13 @@ object HeuristicPlayer extends PlayerGen {
 
 class HeuristicPlayer private (
   val rules: Rules,
-  val possibleHintTypes: Array[GiveHintType],
+
+  //Various utility values we compute once and cache
   val maxHints: Int,
-  val distinctCards: List[Card],
-  val numCardsInitial: Array[Int],
-  val colors: Array[Color],
+  val possibleHintTypes: Array[GiveHintType],
+  val distinctCards: List[Card],   //contains each distinct card type once
+  val numCardsInitial: Array[Int], //indexed by card.arrayIdx, counts the quantity of that card in the whole deck
+  val colors: Array[Color],        //an array of the colors in this game
 
   //Tracks what cards are visible by us
   var seenMap: SeenMap,
@@ -95,6 +115,7 @@ class HeuristicPlayer private (
   var isInconsistent: Boolean
 ) extends Player {
 
+  //Checks whether the current game state is one where we should be printing debug messages.
   def debugging(game: Game): Boolean = {
     game.debugPath match {
       case None => false
@@ -300,7 +321,7 @@ class HeuristicPlayer private (
   val DISCARD_MAYBE_GAMEOVER: DiscardGoodness = 1
   val DISCARD_GAMEOVER: DiscardGoodness = 0
 
-  //Goodness and discard are by common knowledge if and only if
+  //Goodness and discard are by common knowledge if and only if ck is true
   def mostLikelyDiscard(pid: PlayerId, game: Game, ck: Boolean): (HandId,DiscardGoodness) = {
     val revHand: Array[CardId] = game.hands(pid).cardArray().reverse
     val numCards = revHand.length
@@ -658,7 +679,7 @@ class HeuristicPlayer private (
       Math.log(1.0 + Math.exp(x/width)) * width
   }
 
-  //Maps from expected score space -> goodness space
+  //Maps from expected score space ("raw eval") -> goodness space ("eval")
   //This is a bit of a hack, because otherwise the horizon effect makes the bot highly reluctant to discard
   //due to fears of discarding the exact same card as partner is about to discard. By exping the values, we make
   //the averaging of that scenario have less effect.
@@ -672,24 +693,22 @@ class HeuristicPlayer private (
     "%.1f (%.3f)".format(eval,untransformEval(eval))
   }
 
+  //If we're not stopping on early losses, drop the raw eval by this many points for each point of score
+  //we provably will miss a win by.
+  val scoreDropPerLostPoint = 3.0
+
   def staticEvalGame(game: Game): Double = {
     if(isInconsistent)
       Double.NaN
     else if(game.isDone()) {
       if(rules.stopEarlyLoss)
         transformEval(game.numPlayed.toDouble)
-      else {
-        if(game.isWon())
-          transformEval(game.numPlayed.toDouble)
-        else
-          //Drop 3 for every point we missed the end by, for consistency with the during-game scoring.
-          transformEval(game.numPlayed.toDouble - 3.0 * (rules.maxScore - game.numPlayed))
-      }
+      else
+        transformEval(game.numPlayed.toDouble - scoreDropPerLostPoint * (rules.maxScore - game.numPlayed))
     }
     else {
-      val numDiscardsLeft = rules.maxDiscards - game.numDiscarded
-      val numHints = game.numHints
-      val numUnknownHintsGiven = game.numUnknownHintsGiven
+      //PRELIMARIES-----------------------------------------------------------------------------------------
+      //Compute some basic bounds and values used in the eval
 
       val turnsLeft = {
         if(game.finalTurnsLeft >= 0) game.finalTurnsLeft
@@ -710,9 +729,16 @@ class HeuristicPlayer private (
           Math.min(count,turnsLeft)
         }
       }
+      //The amount by which we will provably miss the max score by
       val lossGap = rules.maxScore - game.numPlayed - maxPlaysLeft
 
-      val numHintsAdjusted = numHints
+
+      //NET HINTS-----------------------------------------------------------------------------------------
+      //The most important term in the eval function - having more hints left in the game
+      //(including in the future) is better.
+
+      val numHints = game.numHints
+
       // TODO this helps on 3 and 4 player but hurts on 2-player!?
       // val numHintsAdjusted =
       //   if(numHints >= rules.maxHints) numHints - 0.70
@@ -720,9 +746,11 @@ class HeuristicPlayer private (
       //   else if(numHints == rules.maxHints-2) numHints - 0.05
       //   else numHints - 0.00
 
+      val numDiscardsLeft = rules.maxDiscards - game.numDiscarded
+      val numUnknownHintsGiven = game.numUnknownHintsGiven
       val numPotentialHints = {
         numDiscardsLeft +
-        numHintsAdjusted +
+        numHints +
         //Assume that unknown hints gain some value, even if we don't know what would be hinted
         numUnknownHintsGiven * 0.1 +
         {
@@ -733,6 +761,7 @@ class HeuristicPlayer private (
         }
       }
 
+      //Adjustment - penalize for "bad" beliefs that need more hints to fix
       val fixupHintsRequired =
         game.hands.foldLeft(0.0) { case (acc,hand) =>
           hand.foldLeft(acc) { case (acc,cid) =>
@@ -756,12 +785,15 @@ class HeuristicPlayer private (
           }
         }
 
+      //Adjustment - bonus for "good" knowledge we already know that saves hints
       val goodKnowledge =
         game.hands.foldLeft(0.0) { case (acc,hand) =>
           hand.foldLeft(acc) { case (acc,cid) =>
             //TODO here and other places we use seenmap, consider using uniquePossible
             val card = game.seenMap(cid)
             val value = {
+              //TODO also if a card is not visible so that we can't say that it's probably correctly believed playable,
+              //it's still very likely and we should probably count something for that too
               if(probablyCorrectlyBelievedPlayableSoon(cid,game))
                 0.5
               //TODO also add to the "isBelievedProtected(cid)" condition a check for whether it is
@@ -784,9 +816,9 @@ class HeuristicPlayer private (
           }
         }
 
+      //All of the hint-related factors combined, and adjusted.
       val netFreeHints =
         numPotentialHints * 0.9 + goodKnowledge - (fixupHintsRequired + maxPlaysLeft) - 4
-
       //How much of the remaining score are we not getting due to lack of hints
       val hintScoreFactor = {
         val hintScoreFactorRaw = (maxPlaysLeft.toDouble + 3.0 - softPlus(-netFreeHints,2.5)) / (maxPlaysLeft + 3.0)
@@ -794,7 +826,11 @@ class HeuristicPlayer private (
         softPlus(hintScoreFactorRaw,0.1)
       }
 
+      //LIMITED TIME/TURNS -----------------------------------------------------------------------------------------
+      //Compute eval factors relating to having a limited amount of time or discards in the game.
+
       //TODO this has not been tested or tuned much
+      //
       //How much of the remaining score are we not getting due to lack of turns
       val turnsLeftFactor = Math.min(maxPlaysLeft.toDouble, 0.8 * turnsLeft) / maxPlaysLeft.toDouble
 
@@ -824,6 +860,9 @@ class HeuristicPlayer private (
       //     else 1.000
       //   }
       // }
+
+      //DANGER AND CLOGGING -----------------------------------------------------------------------------------------
+      //Compute eval factors relating to having clogged hands or having discarded useful cards
 
       //How much of the remaining score are we not getting due to danger stuff
       val dangerCount = distinctCards.foldLeft(0) { case (acc,card) =>
@@ -885,6 +924,8 @@ class HeuristicPlayer private (
         acc * value
       }
 
+      //BOMBS -----------------------------------------------------------------------------------------
+
       val bombsLeft = rules.maxBombs - game.numBombs + 1
       val bombsFactor = {
         if(bombsLeft >= 3) 1.0
@@ -892,6 +933,8 @@ class HeuristicPlayer private (
         else if(bombsLeft == 1) 0.93
         else 0.0
       }
+
+      //PUT IT ALL TOGETHER -----------------------------------------------------------------------------------------
 
       val totalFactor = {
         dangerFactor *
@@ -930,6 +973,8 @@ class HeuristicPlayer private (
     }
   }
 
+  //Perform the given actions assuming the given CardIds are the given Cards, and return the result
+  //of the static evaluation on the resulting game state.
   def evalActions(game: Game, actions: List[GiveAction], assumingCards: List[(CardId,Card)]): Double = {
     val gameCopy = Game(game)
     val playerCopy = HeuristicPlayer(this)
@@ -942,6 +987,8 @@ class HeuristicPlayer private (
     playerCopy.staticEvalGame(gameCopy)
   }
 
+  //Perform the given action assuming the given CardIds are the given Cards and compute the expected
+  //evaluation averaging over a prediction of what the next player might do.
   def evalLikelyActionSimple(nextPid: PlayerId, game: Game, ga: GiveAction, assumingCards: List[(CardId,Card)]): Double = {
     val nextPlayer = HeuristicPlayer(this)
     val nextGame = Game(game)
@@ -979,7 +1026,7 @@ class HeuristicPlayer private (
 
   //TODO make this better
 
-  //Returns a list of possible actions and probabilities for each
+  //Returns a probability distribution on possible actions the next player might do
   def likelyActionsSimple(pid: PlayerId, game: Game): List[(GiveAction,Double)] = {
     val playsNow: List[HandId] = possiblePlays(pid, game, now=true, ck=false)
     if(playsNow.nonEmpty)
@@ -1004,13 +1051,13 @@ class HeuristicPlayer private (
     }
   }
 
+  //Interface method. This is the top-level action function!
   override def getAction(game: Game): GiveAction = {
     val myPid = game.curPlayer
     val nextPid = (myPid+1) % rules.numPlayers
 
-    val plays: List[HandId] = possiblePlays(myPid, game, now=false, ck=false)
-    val playsNow: List[HandId] = possiblePlays(myPid, game, now=true, ck=false)
-
+    //We loop over all "reasonable" actions, computing their values, using these variables
+    //to store the best one, which we return at the end.
     var bestAction: GiveAction = GivePlay(0) //always legal
     var bestActionValue: Double = -10000.0
 
@@ -1028,9 +1075,11 @@ class HeuristicPlayer private (
     }
 
     //TODO allow trying to playing a card without knowing if it's playable if it could be playable
-    //such as at the end of the game when you know it's in your hand but you haven't been hinted.
+    //such as at the end of the game when you know it's in your hand but you haven't been hinted
+    //and it's the last turn so you might as well guess.
 
     //Try all play actions
+    val playsNow: List[HandId] = possiblePlays(myPid, game, now=true, ck=false)
     playsNow.foreach { hid =>
       //Right now, we only play cards we think are probably playable, so get all the possibilities
       //and filter down conditioning on the card being playable, and average over the results
@@ -1054,6 +1103,13 @@ class HeuristicPlayer private (
     if(game.numHints < rules.maxHints) {
       val (mld,dg) = mostLikelyDiscard(myPid,game,ck=false)
       val cid = game.hands(myPid)(mld)
+
+      //TODO technically this and many other places that use probability distributions or weighted
+      //card distributions don't handle multiplicity of cards properly in the prior - weights are not
+      //affected by whether there are 1, 2, or 3 of a card left
+
+      //Based on what kind of discard it is, reweight the various cards that it could logically be
+      //to reflect that for better discards, it's rather unlikely for us to throw away something bad.
       val possiblesAndWeights = dg match {
         case (DISCARD_PROVABLE_JUNK | DISCARD_JUNK) =>
           possibleCards(cid,ck=false).map { card =>
@@ -1075,6 +1131,8 @@ class HeuristicPlayer private (
         case (DISCARD_MAYBE_GAMEOVER | DISCARD_GAMEOVER) =>
           possibleCards(cid,ck=false).map { card => (card,1.0) }
       }
+
+      //Compute the average eval weighted by the weight of each card it could be.
       val ga = GiveDiscard(mld)
       var sum = 0.0
       var wsum = 0.0

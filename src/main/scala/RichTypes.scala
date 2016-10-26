@@ -1,3 +1,9 @@
+/**
+  * RichTypes.scala
+  * Implements some convenient functions not present in the Scala standard library, with implicit conversions
+  * so that it's as if they were implemented for the standard library classes.
+  */
+
 package fireflower
 
 import scala.language.implicitConversions

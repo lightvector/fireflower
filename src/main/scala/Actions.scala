@@ -1,7 +1,8 @@
 /**
   * Actions.scala
-  * Basic types for hints and other actions
+  * Basic types for hints and possible actions
   */
+
 package fireflower
 
 //What kinds of hints may be given
@@ -11,6 +12,7 @@ sealed trait SeenHintType
 
 case class HintColor(color: Color) extends SeenHintType with GiveHintType
 case class HintNumber(number: Int) extends SeenHintType with GiveHintType
+//For some hanabi variants
 case object HintSameColor extends SeenHintType
 case object HintSameNumber extends SeenHintType
 case object HintSame extends SeenHintType
@@ -33,6 +35,8 @@ case class SeenBomb(hid: HandId, cid: CardId) extends SeenAction
 case class SeenHint(pid: PlayerId, hint: SeenHintType, appliedTo: Array[Boolean]) extends SeenAction
 
 object GiveAction {
+
+  //Parses inputs like "hint 2 R" or "play 5" into actions.
   def ofString(s:String) = {
     def fail() = throw new Exception()
     try {

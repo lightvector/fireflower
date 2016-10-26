@@ -30,6 +30,10 @@ sealed trait Color extends Ordered[Color] {
     }
   }
 
+  def toString(useAnsiColors: Boolean): String = {
+    toAnsiColorCode() + toString() + Color.ansiResetColor
+  }
+
   def toAnsiColorCode(): String = {
     this match {
       case Red => "\u001B[31m"

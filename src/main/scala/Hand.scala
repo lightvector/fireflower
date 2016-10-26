@@ -1,6 +1,6 @@
 /**
   * Hand.scala
-  * A basic mutable structure for representing a person's hand in Hanabi
+  * A basic mutable structure for representing a person's hand in Hanabi.
   * Index 0 is the newest card drawn.
   */
 
@@ -101,6 +101,10 @@ class Hand private (
 
   def mapCards[T:ClassTag](f: CardId => T): Array[T] = {
     Array.tabulate[T](numCards) { i => f(cards(i)) }
+  }
+
+  override def toString(): String = {
+    cardArray().mkString("")
   }
 
   def toString(seenMap: SeenMap, useAnsiColors: Boolean): String = {

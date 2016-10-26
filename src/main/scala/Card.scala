@@ -17,6 +17,7 @@ object Card {
   //Maximum possible card array index
   val maxArrayIdx: Int = Card.NUMBER_LIMIT * Color.LIMIT
 
+  //Map this card to an array index based on its properties, for array-based card lookups.
   def arrayIdx(color: Color, number: Int): Int = {
     number +  Card.NUMBER_LIMIT * color.id
   }
@@ -35,6 +36,10 @@ case class Card(
   def compare(that: Card): Int = {
     import scala.math.Ordered.orderingToOrdered
     (color,number).compare((that.color,that.number))
+  }
+
+  override def toString(): String = {
+    toString(useAnsiColors = false)
   }
 
   def toString(useAnsiColors: Boolean): String = {

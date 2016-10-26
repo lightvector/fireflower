@@ -1,3 +1,8 @@
+/**
+  * Player.scala
+  * Hanabi player implementations must satisfy this interface.
+  */
+
 package fireflower
 
 abstract class Player {
@@ -10,6 +15,8 @@ abstract class Player {
   def getAction(game: Game): GiveAction
 }
 
+//A PlayerGen is an object that specifies the players for a given game, with a seed
+//to randomize the players in case they are players that could behave randomly.
 trait PlayerGen {
   def genPlayers(rules: Rules, seed: Long): Array[Player]
 }

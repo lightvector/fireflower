@@ -1,8 +1,10 @@
-package fireflower
-
-/** Rand
+/**
+  * Rand.scala
   * A simple class for random number generation, independent of the scala or java built-in random. High-period and high-quality.
   */
+
+package fireflower
+
 object Rand {
   def apply(): Rand = new Rand(RandUtils.makeSeedsFromTime("Rand",2))
   def apply(seed: Long) = new Rand(Array(seed))

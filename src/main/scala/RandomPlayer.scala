@@ -1,3 +1,9 @@
+/**
+  * RandomPlayer.scala
+  * A player that plays randomly. Not very good, just intended as a really really low baseline.
+  */
+
+
 package fireflower
 
   //RunSeed 0L

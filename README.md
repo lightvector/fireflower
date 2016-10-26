@@ -7,7 +7,7 @@
 2. Clone this github repo to any desired directory and navigate to that directory.
 3. Run `sbt`.
 4. Within sbt, run `compile` to build the Scala code
-5. Within sbt, run `run` to run the Scala code
+5. Within sbt, run `run` and select one of the options to run the Scala code.
 
 ### SBT memory issues
 
@@ -46,9 +46,10 @@ A quick overview of what files in src/main/scala/ contain what, in approximately
 * Player Implementation
   * CardPropertyMap.scala - data structure to remember properties of cards, used in implementation of AI players
   * RandomPlayer.scala - a player that plays randomly
-  * HeuristicPlayer.scala - a player that plays via hardcoded rules and heuristics, with minimal search or modeling
-* Main
-  * Main.scala - top level driver, runs the program
+  * HeuristicPlayer.scala - a player that plays via hardcoded conventions and heuristics, with a bit of search
+* Top-level
+  * Sandbox.scala - driver for random experimentation and debugging
+  * Test.scala - a standard runnable set of tests to evaluate player quality
 
 ## Contributors
 
