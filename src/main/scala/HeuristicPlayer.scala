@@ -1262,11 +1262,13 @@ class HeuristicPlayer private (
     //TODO currently only hints the next player! No problem in 2p, but in 3p/4p...
     //Try all hint actions
     if(game.numHints > 0) {
-      possibleHintTypes.foreach { hint =>
-        val ga = GiveHint(nextPid,hint)
-        if(game.isLegal(ga)) {
-          val value = evalLikelyActionSimple(nextPid,game,ga,assumingCards=List())
-          recordAction(ga,value)
+      (0 to rules.numPlayers-2).foreach { pidOffset =>
+        possibleHintTypes.foreach { hint =>
+          val ga = GiveHint((nextPid+pidOffset) % rules.numPlayers,hint)
+          if(game.isLegal(ga)) {
+            val value = evalLikelyActionSimple(nextPid,game,ga,assumingCards=List())
+            recordAction(ga,value)
+          }
         }
       }
     }
