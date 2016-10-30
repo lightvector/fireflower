@@ -184,6 +184,29 @@ class HeuristicPlayer private (
     else seenMap.existsUnseen { card => allHintsConsistent(cid,card) }
   }
 
+  //Check if there is a unique possible color for this card conditioned on it being useful. If not, returns NullColor
+  def uniquePossibleUsefulColor(cid: CardId, game: Game, ck: Boolean): Color = {
+    var sm = seenMap
+    if(ck) sm = seenMapCK
+
+    val seenCard = sm(cid)
+    if(seenCard != Card.NULL) {
+      if(game.isUseful(seenCard)) seenCard.color
+      else NullColor
+    }
+    else {
+      val possibles = sm.filterDistinctUnseen { card => allHintsConsistent(cid,card) && game.isUseful(card) }
+      possibles match {
+        case Nil => NullColor
+        case head :: tail =>
+          if(tail.forall { card => card.color == head.color })
+            head.color
+          else
+            NullColor
+      }
+    }
+  }
+
   def provablyPlayable(possibles: List[Card], game: Game): Boolean = {
     possibles.forall { card => game.isPlayable(card) }
   }
@@ -244,16 +267,66 @@ class HeuristicPlayer private (
     }
   }
 
-  //If beliefs and conventions strongly suggest that this card should be a specific card, return
-  //that card, otherwise return Card.NULL.
-  def believedCard(cid: CardId): Card = {
-    //TODO
-    return Card.NULL
+  def getPlaySequenceExn(cid: CardId): PlaySequence = {
+    primeBelief(cid) match {
+      case None => assertUnreachable()
+      case Some(_: ProtectedSet) => assertUnreachable()
+      case Some(_: JunkSet) => assertUnreachable()
+      case Some(b: PlaySequence) => b
+    }
   }
 
-  def isBelievedDangerous(cid: CardId, game: Game): Boolean = {
-    val card = believedCard(cid)
-    card != Card.NULL && game.isDangerous(card)
+  //TODO can we use this? It didn't seem to help when using it in probablyCorrectlyBelievedPlayableSoon
+  //If knowledge proves or if beliefs and conventions strongly suggest that this card should be a specific card, return
+  //that card, otherwise return Card.NULL.
+  def believedCard(cid: CardId, game: Game, ck: Boolean): Card = {
+    var sm = seenMap
+    if(ck) sm = seenMapCK
+    val known = uniquePossible(cid, ck)
+    if(known != Card.NULL) known
+    else {
+      primeBelief(cid) match {
+        case None => Card.NULL
+        case Some(_: ProtectedSet) => Card.NULL
+        case Some(_: JunkSet) => Card.NULL
+        case Some(b: PlaySequence) =>
+          //Believed playable now
+          if(b.seqIdx <= 0)
+            sm.filterUniqueDistinctUnseen { card => allHintsConsistent(cid,card) && game.isPlayable(card) }
+          //Believed playable later
+          else {
+            Card.NULL
+            //TODO see whether this logic makes it better
+            // val possibles = sm.filterDistinctUnseen { card => allHintsConsistent(cid,card) && game.isUseful(card) }
+            // possibles match {
+            //   case Nil => Card.NULL
+            //   case head :: tail =>
+            //     //If this card must be a certain color...
+            //     if(tail.forall { card => card.color == head.color }) {
+            //       val color = head.color
+            //       //Check all earlier cards to count and see which this could be
+            //       var simulatedNextPlayable = game.nextPlayable(color.id)
+            //       def loop(seqIdx:Int): Card = {
+            //         if(seqIdx >= b.seqIdx)
+            //           possibles.find { card => card.number == simulatedNextPlayable }.getOrElse(Card.NULL)
+            //         else {
+            //           val card = sm.filterUniqueDistinctUnseen { card => allHintsConsistent(cid,card) && card.color == color && card.number == simulatedNextPlayable }
+            //           if(card == Card.NULL)
+            //             loop(seqIdx + 1)
+            //           else {
+            //             simulatedNextPlayable += 1
+            //             loop(seqIdx + 1)
+            //           }
+            //         }
+            //       }
+            //       loop(0)
+            //     }
+            //     //If it doesn't have to be a certain color, we have no idea
+            //     else Card.NULL
+            // }
+          }
+      }
+    }
   }
 
   //Check if to the best of our knowledge, based on what's actually visible and what we suspect, a given card will
@@ -382,6 +455,20 @@ class HeuristicPlayer private (
     }.toList
   }
 
+  def allBelievedPlays(game: Game): List[CardId] = {
+    game.hands.flatMap { hand =>
+      (0 to (hand.numCards-1)).flatMap { hid =>
+        val cid = hand(hid)
+        primeBelief(cid) match {
+          case None => None
+          case Some(_: ProtectedSet) => None
+          case Some(_: JunkSet) => None
+          case Some(_: PlaySequence) => Some(cid)
+        }
+      }
+    }.toList
+  }
+
   // TODO A major item that seems to sink the bot a lot right now is bad handling of discards and plays and bombs
   // In particular, things like preferring to discard more after the opponent as (via not hinting you) signalled
   // that your hand is safer than you think. Or understanding that drawing new cards yourself means less clogging
@@ -484,7 +571,8 @@ class HeuristicPlayer private (
     }
 
     //See what cards would have been be possible for the player to play by common knowledge
-    val prePossiblePlays: List[HandId] = possiblePlays(pid,postGame,now=true,ck=true)
+    val prePossiblePlaysNow: List[HandId] = possiblePlays(pid,postGame,now=true,ck=true)
+    val preAllBelievedPlays: List[CardId] = allBelievedPlays(postGame)
 
     //See what card that player would have been likely to discard
     val (preMLD,preMLDGoodness): (HandId, DiscardGoodness) = mostLikelyDiscard(pid,postGame,ck=true)
@@ -520,7 +608,7 @@ class HeuristicPlayer private (
     //then it's a protection hint.
     else if(
       sh.appliedTo(preMLD) &&
-        (prePossiblePlays.isEmpty || prePossiblePlays.exists { hid => sh.appliedTo(hid) }) &&
+        (prePossiblePlaysNow.isEmpty || prePossiblePlaysNow.exists { hid => sh.appliedTo(hid) }) &&
         !numberHintWithPlay &&
         !provablyNotDangerous(possibleCards(preMLD,ck=true),postGame)
     ) {
@@ -529,11 +617,29 @@ class HeuristicPlayer private (
     //TODO this needs to be more sophisticated as well
     //Otherwise if at least one card hinted could be playable after the hint, then it's a play hint
     else if(hintCids.exists { cid => !provablyNotPlayable(possibleCards(cid,ck=true),postGame) }) {
-      //TODO this needs to be more sophisticated and take into account other hinted-as-plays cards
       //Cards that are provably playable come first in the ordering
       val (hintCidsProvable, hintCidsNotProvable): (Array[CardId],Array[CardId]) =
         hintCids.partition { cid => provablyPlayable(possibleCards(cid,ck=true),postGame) }
-      addBelief(PlaySequenceInfo(cids = hintCidsProvable ++ hintCidsNotProvable))
+
+      //If there are cards believed playable already that are provably of the same colors, assume those
+      //come first in sequence and chain them on to the appropriate play sequences. The remaining get
+      //attached to the sequence for this hint.
+      val hintCidsNotProvable2 = hintCidsNotProvable.filter { cid =>
+        val color = uniquePossibleUsefulColor(cid, postGame, ck=true)
+        var keep = true
+        if(color != NullColor) {
+          val earlierPlayCid = preAllBelievedPlays.find { playCid => playCid != cid && color == uniquePossibleUsefulColor(playCid, postGame, ck=true) }
+          earlierPlayCid match {
+            case None => ()
+            case Some(earlierPlayCid) =>
+              val info = getPlaySequenceExn(earlierPlayCid).info
+              addBelief(PlaySequenceInfo(cids = info.cids :+ cid))
+              keep = false
+          }
+        }
+        keep
+      }
+      addBelief(PlaySequenceInfo(cids = hintCidsProvable ++ hintCidsNotProvable2))
     }
     //Otherwise if all cards in the hint are provably unplayable and not provably junk,
     //then it's a protection hint.
