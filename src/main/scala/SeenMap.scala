@@ -74,22 +74,26 @@ class SeenMap private (
 
   //Get a list of the distinct cards that have at least one unseen
   def distinctUnseen(): List[Card] = {
-    (0 to (distinctCards.length-1)).flatMap { i =>
+    var list: List[Card] = Nil
+    var i: Int = distinctCards.length-1
+    while(i >= 0) {
       if(numUnseenByCard(distinctCards(i).arrayIdx) > 0)
-        Some(distinctCards(i))
-      else
-        None
-    }.toList
+        list = list :+ distinctCards(i)
+      i -= 1
+    }
+    list
   }
 
   //Get a list of the distinct cards that have at least one unseen, filtering it in the process
   def filterDistinctUnseen(f: Card => Boolean): List[Card] = {
-    (0 to (distinctCards.length-1)).flatMap { i =>
+    var list: List[Card] = Nil
+    var i: Int = distinctCards.length-1
+    while(i >= 0) {
       if(numUnseenByCard(distinctCards(i).arrayIdx) > 0 && f(distinctCards(i)))
-        Some(distinctCards(i))
-      else
-        None
-    }.toList
+        list = list :+ distinctCards(i)
+      i -= 1
+    }
+    list
   }
 
   //If there is a unique distinct unseen card for which f is true, return it, else return Card.NULL

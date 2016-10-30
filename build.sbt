@@ -8,6 +8,8 @@ lazy val root = (project in file(".")).
 
     fork in run := true,
 
+    mainClass in assembly := Some("fireflower.PlayerTests"),
+
     scalacOptions ++= Seq(
       "-deprecation",
       "-feature",
