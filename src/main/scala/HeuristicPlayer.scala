@@ -210,6 +210,9 @@ class HeuristicPlayer private (
   def provablyPlayable(possibles: List[Card], game: Game): Boolean = {
     possibles.forall { card => game.isPlayable(card) }
   }
+  def provablyPlayableIfUseful(possibles: List[Card], game: Game): Boolean = {
+    possibles.forall { card => game.isPlayable(card) || game.isJunk(card) }
+  }
   def provablyNotPlayable(possibles: List[Card], game: Game): Boolean = {
     possibles.forall { card => !game.isPlayable(card) }
   }
@@ -441,16 +444,22 @@ class HeuristicPlayer private (
       if(provablyNotPlayable(possibles,game))
         false
       else {
+        //Provably playable
         provablyPlayable(possibles,game) ||
+        //Or believed...
         {
           primeBelief(cid) match {
             case None => false
-            case Some(_: ProtectedSet) => false
             case Some(_: JunkSet) => false
+            //Protected and playable conditional on being useful
+            case Some(_: ProtectedSet) =>
+              provablyPlayableIfUseful(possibles,game)
+            //Playable and right now
             case Some(b: PlaySequence) =>
               if(now) b.seqIdx == 0 else true
           }
         }
+
       }
     }.toList
   }
@@ -539,10 +548,6 @@ class HeuristicPlayer private (
   }
 
   //TODO some big items not yet implemented!
-  // - chaining of hints (hint something playable AFTER another card not played)
-  //   Useful in 2 player to avoid discards and such, or to hint multiple 2s if you know
-  //   you can play the last 1 in time, etc
-  //   We might need to make the data structure for playable sequence more complex (a DAG instead of a List?)
   // - discard playable means someone else should play it
   // - hint to cause someone to bomb also indicates protection
   // - finesses/crossovers (for 3p and higher)
