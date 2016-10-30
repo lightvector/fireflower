@@ -265,10 +265,7 @@ class HeuristicPlayer private (
       case Some(_: JunkSet) => false
       case Some(b: PlaySequence) =>
         if(b.seqIdx <= 0) {
-          val card = {
-            val known = uniquePossible(cid, ck=false)
-            if(known == Card.NULL) believedCard(cid) else known
-          }
+          val card = uniquePossible(cid, ck=false)
           if(card == Card.NULL)
             false
           else
@@ -286,10 +283,7 @@ class HeuristicPlayer private (
               okIfStopHere
             else {
               val cid = b.info.cids(seqIdx)
-              val card = {
-                val known = uniquePossible(cid, ck=false)
-                if(known == Card.NULL) believedCard(cid) else known
-              }
+              val card = uniquePossible(cid, ck=false)
 
               //Don't have a guess as to what the card is - can't say that it's playable soon
               if(card == Card.NULL)
@@ -342,27 +336,18 @@ class HeuristicPlayer private (
                 case None =>
                   val usefulDiscard = (0 to (numCards-1)).find { pos =>
                     !isBelievedPlayable(revHand(pos),now=false) &&
-                    !isBelievedDangerous(revHand(pos),game) &&
                     !provablyDangerous(possibles(pos),game) &&
                     !provablyPlayable(possibles(pos),game)
                   }
                   usefulDiscard match {
                     case Some(pos) => (pos,DISCARD_USEFUL)
                     case None =>
-                      val playableDiscard = (0 to (numCards-1)).find { pos =>
-                        !isBelievedDangerous(revHand(pos),game) &&
+                      val maybeGameOverDiscard = (0 to (numCards-1)).find { pos =>
                         !provablyDangerous(possibles(pos),game)
                       }
-                      playableDiscard match {
-                        case Some(pos) => (pos,DISCARD_PLAYABLE)
-                        case None =>
-                          val maybeGameOverDiscard = (0 to (numCards-1)).find { pos =>
-                            !provablyDangerous(possibles(pos),game)
-                          }
-                          maybeGameOverDiscard match {
-                            case Some(pos) => (pos,DISCARD_MAYBE_GAMEOVER)
-                            case None => (0,DISCARD_GAMEOVER)
-                          }
+                      maybeGameOverDiscard match {
+                        case Some(pos) => (pos,DISCARD_MAYBE_GAMEOVER)
+                        case None => (0,DISCARD_GAMEOVER)
                       }
                   }
               }
