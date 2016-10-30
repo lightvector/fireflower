@@ -598,6 +598,27 @@ class HeuristicPlayer private (
       }
     }
 
+    //Scan through all cids provided.
+    //If some cids are provably of the same colors as other cards believed playable already, then
+    //chain those cids on to the appropriate play sequence for those other cards, and filter them out of the array.
+    def chainAndFilterFuturePlays(cids: Array[CardId]): Array[CardId] = {
+      cids.filter { cid =>
+        val color = uniquePossibleUsefulColor(cid, postGame, ck=true)
+        var keep = true
+        if(color != NullColor) {
+          val earlierPlayCid = preAllBelievedPlays.find { playCid => playCid != cid && color == uniquePossibleUsefulColor(playCid, postGame, ck=true) }
+          earlierPlayCid match {
+            case None => ()
+            case Some(earlierPlayCid) =>
+              val info = getPlaySequenceExn(earlierPlayCid).info
+              addBelief(PlaySequenceInfo(cids = info.cids :+ cid))
+              keep = false
+          }
+        }
+        keep
+      }
+    }
+
     //If this hint is an unknown hint, it does nothing
     if(sh.hint == UnknownHint)
     {}
@@ -621,33 +642,19 @@ class HeuristicPlayer private (
       val (hintCidsProvable, hintCidsNotProvable): (Array[CardId],Array[CardId]) =
         hintCids.partition { cid => provablyPlayable(possibleCards(cid,ck=true),postGame) }
 
-      //If there are cards believed playable already that are provably of the same colors, assume those
-      //come first in sequence and chain them on to the appropriate play sequences. The remaining get
-      //attached to the sequence for this hint.
-      val hintCidsNotProvable2 = hintCidsNotProvable.filter { cid =>
-        val color = uniquePossibleUsefulColor(cid, postGame, ck=true)
-        var keep = true
-        if(color != NullColor) {
-          val earlierPlayCid = preAllBelievedPlays.find { playCid => playCid != cid && color == uniquePossibleUsefulColor(playCid, postGame, ck=true) }
-          earlierPlayCid match {
-            case None => ()
-            case Some(earlierPlayCid) =>
-              val info = getPlaySequenceExn(earlierPlayCid).info
-              addBelief(PlaySequenceInfo(cids = info.cids :+ cid))
-              keep = false
-          }
-        }
-        keep
-      }
+      //Split out any cards that should belong to other play sequences
+      val hintCidsNotProvable2 = chainAndFilterFuturePlays(hintCidsNotProvable)
       addBelief(PlaySequenceInfo(cids = hintCidsProvable ++ hintCidsNotProvable2))
     }
-    //Otherwise if all cards in the hint are provably unplayable and not provably junk,
-    //then it's a protection hint.
+    //Otherwise if all cards in the hint are provably unplayable and not provably junk
     else if(hintCids.forall { cid =>
       val possibles = possibleCards(cid,ck=true)
       provablyNotPlayable(possibles,postGame) && !provablyJunk(possibles,postGame)
     }) {
-      addBelief(ProtectedSetInfo(cids = hintCids))
+      //Split out any cards that should belong to other play sequences
+      val leftoverCids = chainAndFilterFuturePlays(hintCids)
+      //Anything remaining treat as protected
+      addBelief(ProtectedSetInfo(cids = leftoverCids))
     }
     //Otherwise if all cards in the hint are provably junk, then it's a protection hint
     //to all older cards that are not provably junk older than the oldest in the hint
@@ -689,8 +696,8 @@ class HeuristicPlayer private (
                 addBelief(ProtectedSetInfo(cids = filteredCids))
               }
 
-              //Filter play sequences down to only card ids that could be playable in that sequence given the cards before
-              //Also remove cards from the play sequence that were superseeded by another belief
+            //Filter play sequences down to only card ids that could be playable in that sequence given the cards before
+            //Also remove cards from the play sequence that were superseeded by another belief
             case Some(b: PlaySequence) =>
               b.info.cids.foreach { cid => visited(cid) = true }
               var count = 0
