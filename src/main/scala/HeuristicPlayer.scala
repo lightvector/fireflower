@@ -583,7 +583,8 @@ class HeuristicPlayer private (
                 addBelief(ProtectedSetInfo(cids = filteredCids))
               }
 
-            //Filter play sequences down to only card ids that could be playable in that sequence given the cards before
+              //Filter play sequences down to only card ids that could be playable in that sequence given the cards before
+              //Also remove cards from the play sequence that were superseeded by another belief
             case Some(b: PlaySequence) =>
               b.info.cids.foreach { cid => visited(cid) = true }
               var count = 0
@@ -592,8 +593,14 @@ class HeuristicPlayer private (
                 postGame.isPlayable(card) ||
                 possiblePlaysUpToNow.exists { c => c.color == card.color && c.number == card.number-1 }
               }
-
-              val (newCids,filteredCids) = b.info.cids.partition { cid =>
+              def partOfThisSequence(cid: CardId): Boolean = {
+                primeBelief(cid) match {
+                  case Some(other: PlaySequence) => other.info eq b.info
+                  case _ => false
+                }
+              }
+              val remainingCids = b.info.cids.filter { cid => partOfThisSequence(cid) }
+              val (newCids,filteredCids) = remainingCids.partition { cid =>
                 count += 1
                 if(count == b.info.cids.length)
                   possibleCards(cid,ck=true).exists { card => possiblyPlayable(card) }
@@ -865,6 +872,8 @@ class HeuristicPlayer private (
       }
       val dangerFactor = Math.max(0.0, 1.0 - (dangerCount / 200.0))
 
+      //TODO clogginess should be less for cards that are one-away from being playable
+      //or for cards that literally are playable.
       val handClogFactor = game.hands.foldLeft(1.0) { case (acc,hand) =>
         val numClogs = hand.count { cid =>
           val card = seenMap(cid)
