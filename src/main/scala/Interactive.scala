@@ -15,12 +15,12 @@ object Interactive {
     assertUnreachable()
   }
 
-  def playInRealWorld(numPlayers: Int, myPid: Int): Unit = {
+  def playInRealWorld(numPlayers: Int, myPid: PlayerId): Unit = {
     val rules = Rules.Standard(numPlayers)
     val game = Game(rules,seed=0L)
     game.drawInitialCards()
 
-    val player = HeuristicPlayer(rules)
+    val player = HeuristicPlayer(rules,myPid)
     for(pid <- 0 to (rules.numPlayers-1)) {
       game.hideFor(pid)
     }

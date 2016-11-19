@@ -94,6 +94,21 @@ class Hand private (
     acc
   }
 
+  def find(f: CardId => Boolean): Option[CardId] = {
+    var i = 0
+    var cid = 0
+    var found = false
+    while(i < numCards && !found) {
+      if(f(cards(i))) {
+        cid = cards(i)
+        found = true
+      }
+      i += 1
+    }
+    if(found) Some(cid)
+    else None
+  }
+
   //Makes a copy
   def cardArray(): Array[CardId] = {
     Array.tabulate(numCards) { i => cards(i) }

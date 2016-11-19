@@ -46,12 +46,13 @@ case class JunkSet(seqIdx: Int, info: JunkSetInfo) extends Belief
 object HeuristicPlayer extends PlayerGen {
 
   //Construct a HeuristicPlayer for the given rule set
-  def apply(rules: Rules): HeuristicPlayer = {
+  def apply(rules: Rules, myPid: Int): HeuristicPlayer = {
     val numCardsInitial = Array.fill(Card.maxArrayIdx)(0)
     rules.cards().foreach { card =>
       numCardsInitial(card.arrayIdx) += 1
     }
     new HeuristicPlayer(
+      myPid = myPid,
       rules = rules,
       possibleHintTypes = rules.possibleHintTypes(),
       maxHints = rules.maxHints,
@@ -67,8 +68,9 @@ object HeuristicPlayer extends PlayerGen {
   }
 
   //Copy constructor
-  def apply(that: HeuristicPlayer): HeuristicPlayer = {
+  def apply(that: HeuristicPlayer, newMyPid:Int): HeuristicPlayer = {
     new HeuristicPlayer(
+      myPid = newMyPid,
       rules = that.rules,
       possibleHintTypes = that.possibleHintTypes.clone(),
       maxHints = that.maxHints,
@@ -86,12 +88,13 @@ object HeuristicPlayer extends PlayerGen {
   //PlayerGen interface - Generate a set of players for a game.
   def genPlayers(rules: Rules, seed: Long): Array[Player] = {
     (0 to (rules.numPlayers-1)).map { myPid =>
-      this(rules)
+      this(rules,myPid)
     }.toArray
   }
 }
 
 class HeuristicPlayer private (
+  val myPid: Int,
   val rules: Rules,
 
   //Various utility values we compute once and cache
@@ -496,12 +499,52 @@ class HeuristicPlayer private (
       primeBelief(cid) match {
         //No prior belief
         case None => ()
-        //Card was protected - something unusual must have happened for the player to throw it away
-        //TODO we should probably have some logic here
-        case Some(_: ProtectedSet) => ()
-        //Card was a believed play - something unusual must have happened for the player to throw it away
-        //TODO we should probably have some logic here
-        case Some(_: PlaySequence) => ()
+        //Card was protected or was a believed play
+        case Some(_: ProtectedSet) | Some(_: PlaySequence) =>
+          //TODO also check that it was NOT the most likely discard?
+          //TODO this massively hurts playing strength on 3 and 4 player. Why? A bug? For now we hack to 2-player only
+
+          //If the card was playable right now, then it's a hint about a playable duplicate of that card.
+          if(rules.numPlayers == 2 && postGame.isPlayable(card)) {
+            //Find all players that have a copy of that card other than the discarder
+            val discardPid = (postGame.curPlayer + (rules.numPlayers - 1)) % rules.numPlayers
+            val hasCard = (0 to (rules.numPlayers - 1)).map { pid =>
+              if(pid == discardPid)
+                false
+              else
+                postGame.hands(pid).exists { cid => seenMap(cid) == card }
+            }.toArray
+
+            val hasCardCount = hasCard.count(x => x == true)
+
+            //If nobody has that card, assume we do, else if there is a unique other person, assume they do.
+            val targetedPid = {
+              if(hasCardCount == 0 && myPid != discardPid) Some(myPid)
+              else if(hasCardCount == 1) (0 to (rules.numPlayers - 1)).find { pid => hasCard(pid) }
+              else None
+            }
+
+            targetedPid.foreach { pid =>
+              //If there is a positively hinted card that by CK could be the card, mark the first such card as playable if it
+              //is not already marked. Else mark the first card that could by CK be it if not already marked.
+              val hand = postGame.hands(pid)
+              hand.find { cid =>
+                hintedMap(cid).exists { hinted => hinted.applied } &&
+                possibleCards(cid,ck=true).contains(card)
+              } match {
+                case Some(cid) => addBelief(PlaySequenceInfo(cids = Array(cid)))
+                case None =>
+                  hand.find { cid =>
+                    possibleCards(cid,ck=true).contains(card)
+                  } match {
+                    case Some(cid) => addBelief(PlaySequenceInfo(cids = Array(cid)))
+                    case None => ()
+                  }
+              }
+            }
+
+          }
+
         //Card was believed junk
         case Some(b: JunkSet) =>
           //If the card was not actually junk, then immediately change everything in the believed junk set
@@ -1112,7 +1155,7 @@ class HeuristicPlayer private (
   //of the static evaluation on the resulting game state.
   def evalActions(game: Game, actions: List[GiveAction], assumingCards: List[(CardId,Card)]): Double = {
     val gameCopy = Game(game)
-    val playerCopy = HeuristicPlayer(this)
+    val playerCopy = HeuristicPlayer(this,myPid)
     assumingCards.foreach { case (cid,card) => gameCopy.seenMap(cid) = card}
     actions.foreach { ga =>
       val sa = gameCopy.seenAction(ga)
@@ -1125,7 +1168,7 @@ class HeuristicPlayer private (
   //Perform the given action assuming the given CardIds are the given Cards and compute the expected
   //evaluation averaging over a prediction of what the next player might do.
   def evalLikelyActionSimple(nextPid: PlayerId, game: Game, ga: GiveAction, assumingCards: List[(CardId,Card)]): Double = {
-    val nextPlayer = HeuristicPlayer(this)
+    val nextPlayer = HeuristicPlayer(this,nextPid)
     val nextGame = Game(game)
     assumingCards.foreach { case (cid,card) => nextGame.seenMap(cid) = card }
     val sa = nextGame.seenAction(ga)
@@ -1188,7 +1231,7 @@ class HeuristicPlayer private (
 
   //Interface method. This is the top-level action function!
   override def getAction(game: Game): GiveAction = {
-    val myPid = game.curPlayer
+    assert(myPid == game.curPlayer)
     val nextPid = (myPid+1) % rules.numPlayers
 
     //We loop over all "reasonable" actions, computing their values, using these variables
@@ -1267,6 +1310,7 @@ class HeuristicPlayer private (
           possibleCards(cid,ck=false).map { card => (card,1.0) }
       }
 
+      //TODO we can probably reduce code duplication here
       //Compute the average eval weighted by the weight of each card it could be.
       val ga = GiveDiscard(mld)
       var sum = 0.0
@@ -1280,6 +1324,26 @@ class HeuristicPlayer private (
       }
       val value = sum / wsum
       recordAction(ga,value)
+
+      //Try discarding each of our playables
+      playsNow.foreach { hid =>
+        if(hid != mld) {
+          val cid = game.hands(myPid)(hid)
+          val possiblesAndWeights = possibleCards(cid,ck=false).flatMap { card => if(game.isPlayable(card)) Some((card,1.0)) else None }
+          val ga = GiveDiscard(hid)
+          var sum = 0.0
+          var wsum = 0.0
+          val evals = possiblesAndWeights.foreach { case (card,weight) =>
+            val value = evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
+            if(!value.isNaN()) {
+              sum += weight * value
+              wsum += weight
+            }
+          }
+          val value = sum / wsum
+          recordAction(ga,value)
+        }
+      }
     }
 
     //TODO currently only hints the next player! No problem in 2p, but in 3p/4p...
