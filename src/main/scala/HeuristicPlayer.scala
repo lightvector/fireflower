@@ -931,8 +931,8 @@ class HeuristicPlayer private (
               else if(isBelievedProtected(cid) && (card != Card.NULL && game.isDangerous(card)))
                 0.2
               //TODO try this
-              // else if(isBelievedProtected(cid) && (card != Card.NULL && game.isPlayable(card)))
-              //   0.1
+              else if(isBelievedProtected(cid) && (card != Card.NULL && game.isPlayable(card)))
+                0.1
               //TODO try stuff like this
               //else if(isBelievedJunk(cid) && (card == Card.NULL || game.isJunk(card)))
               //  0.1
@@ -1256,7 +1256,7 @@ class HeuristicPlayer private (
           possibleCards(cid,ck=false).map { card =>
             if(game.isJunk(card)) (card,1.0)
             else if(!game.isDangerous(card)) (card,0.7)
-            else (card,0.02)
+            else (card,0.02) //TODO this should depend on hand position
           }
         case (DISCARD_USEFUL | DISCARD_PLAYABLE) =>
           possibleCards(cid,ck=false).map { card =>
