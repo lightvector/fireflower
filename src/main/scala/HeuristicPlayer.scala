@@ -341,7 +341,8 @@ class HeuristicPlayer private (
       case Some(_: JunkSet) => false
       case Some(b: PlaySequence) =>
         if(b.seqIdx <= 0) {
-          val card = uniquePossible(cid, ck=false)
+          //TODO for some strange reason the bot wins more if this is changed to merely "uniquePossible(cid, ck=false)". Why???
+          val card = believedCard(cid, game, ck=false)
           if(card == Card.NULL)
             false
           else
@@ -359,7 +360,8 @@ class HeuristicPlayer private (
               okIfStopHere
             else {
               val cid = b.info.cids(seqIdx)
-              val card = uniquePossible(cid, ck=false)
+              //TODO for some strange reason the bot wins more if this is changed to merely "uniquePossible(cid, ck=false)". Why???
+              val card = believedCard(cid, game, ck=false)
 
               //Don't have a guess as to what the card is - can't say that it's playable soon
               if(card == Card.NULL)
@@ -577,7 +579,7 @@ class HeuristicPlayer private (
 
     //See what cards would have been be possible for the player to play by common knowledge
     val prePossiblePlaysNow: List[HandId] = possiblePlays(pid,postGame,now=true,ck=true)
-    val preAllBelievedPlays: List[CardId] = allBelievedPlays(postGame)
+    val preAllBelievedPlays: List[CardId] = allBelievedPlays(postGame) //TODO should this include provable plays?
 
     //See what card that player would have been likely to discard
     val (preMLD,preMLDGoodness): (HandId, DiscardGoodness) = mostLikelyDiscard(pid,postGame,ck=true)
@@ -589,16 +591,35 @@ class HeuristicPlayer private (
       hintedMap.add(hand(hid),hinted)
     }
 
-    //Check if it's a number hint where all cards touched are possibly playable and the number of cards
-    //touched is larger than the number of playables or eventual playables of that number.
+    //Check if it's a number hint where the manner of the number hint strongly indicates that it's a play hint
     val numberHintWithPlay: Boolean = {
       sh.hint match {
         case HintNumber(num) =>
-          val allPossiblyPlayable = hintCids.forall { cid =>
-            val possibles = possibleCards(cid,ck=true)
-            !provablyNotPlayable(possibles,postGame)
+          {
+            //Hint affects at least one card that was not a play before and that could be playable now.
+            hintCids.exists { cid =>
+              val possibles = possibleCards(cid,ck=true)
+              !provablyNotPlayable(possibles,postGame) //could be playable now
+              !prePossiblePlaysNow.exists { hid => cid == hand(hid) } //not possible play before
+            }
+          } && {
+            //All cards in hint are either provably junk, possibly playable, or completely known
+            hintCids.forall { cid =>
+              val possibles = possibleCards(cid,ck=true)
+              !provablyNotPlayable(possibles,postGame) ||
+              provablyJunk(possibles,postGame) ||
+              possibles.length == 1
+            }
+          } && {
+            //The number of cards possibly playable is >= the number of cards of this number that are useful.
+            //OR all color piles are >= that number
+            val numPossiblyPlayable = hintCids.count { cid =>
+              val possibles = possibleCards(cid,ck=true)
+              !provablyNotPlayable(possibles,postGame)
+            }
+            numPossiblyPlayable > colors.count { color => postGame.nextPlayable(color.id) <= num } ||
+            colors.forall { color => postGame.nextPlayable(color.id) >= num }
           }
-          allPossiblyPlayable && hintCids.length > postGame.nextPlayable.count { n => n <= num }
         case _ => false
       }
     }
@@ -683,6 +704,7 @@ class HeuristicPlayer private (
         if(!visited(cid)) {
           primeBelief(cid) match {
             case None => ()
+            //TODO if a card is provably playable conditional on it being useful, and it's been protected, move it to playable?
             //Filter protected sets down to only cards that could be dangerous
             case Some(b: ProtectedSet) =>
               b.info.cids.foreach { cid => visited(cid) = true }
@@ -902,14 +924,15 @@ class HeuristicPlayer private (
             //TODO here and other places we use seenmap, consider using uniquePossible
             val card = game.seenMap(cid)
             val value = {
-              //TODO also if a card is not visible so that we can't say that it's probably correctly believed playable,
-              //it's still very likely and we should probably count something for that too
               if(probablyCorrectlyBelievedPlayableSoon(cid,game))
-                0.5
+                0.55
               //TODO also add to the "isBelievedProtected(cid)" condition a check for whether it is
               //provably (ck=true) dangerous, or perhaps just whether the card is known exactly
               else if(isBelievedProtected(cid) && (card != Card.NULL && game.isDangerous(card)))
                 0.2
+              //TODO try this
+              // else if(isBelievedProtected(cid) && (card != Card.NULL && game.isPlayable(card)))
+              //   0.1
               //TODO try stuff like this
               //else if(isBelievedJunk(cid) && (card == Card.NULL || game.isJunk(card)))
               //  0.1
