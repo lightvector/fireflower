@@ -637,26 +637,27 @@ class HeuristicPlayer private (
       hintedMap.add(hand(hid),hinted)
     }
 
-    //Check if it's a number hint where the manner of the number hint strongly indicates that it's a play hint
-    val numberHintWithPlay: Boolean = {
-      sh.hint match {
-        case HintNumber(num) =>
-          {
-            //Hint affects at least one card that was not a play before and that could be playable now.
-            hintCids.exists { cid =>
-              val possibles = possibleCards(cid,ck=true)
-              !provablyNotPlayable(possibles,postGame) //could be playable now
-              !preExpectedPlaysNow.exists { hid => cid == hand(hid) } //not possible play before
-            }
-          } && {
-            //All cards in hint are either provably junk, possibly playable, or completely known
-            hintCids.forall { cid =>
-              val possibles = possibleCards(cid,ck=true)
-              !provablyNotPlayable(possibles,postGame) ||
-              provablyJunk(possibles,postGame) ||
-              possibles.length == 1
-            }
-          } && {
+    //Check if it's a hint where the manner of the hint strongly indicates that it's a play hint
+    //even if it would otherwise touch the most likely discard
+    val isPlayEvenIfAffectingMLD: Boolean = {
+      {
+        //Hint affects at least one card that was not a play before and that could be playable now.
+        hintCids.exists { cid =>
+          val possibles = possibleCards(cid,ck=true)
+          !provablyNotPlayable(possibles,postGame) //could be playable now
+          !preExpectedPlaysNow.exists { hid => cid == hand(hid) } //not possible play before
+        }
+      } && {
+        //All cards in hint are either provably junk, possibly playable, or completely known
+        hintCids.forall { cid =>
+          val possibles = possibleCards(cid,ck=true)
+          !provablyNotPlayable(possibles,postGame) ||
+          provablyJunk(possibles,postGame) ||
+          possibles.length == 1
+        }
+      } && {
+        sh.hint match {
+          case HintNumber(num) =>
             //The number of cards possibly playable is >= the number of cards of this number that are useful.
             //OR all color piles are >= that number
             val numPossiblyPlayable = hintCids.count { cid =>
@@ -665,8 +666,11 @@ class HeuristicPlayer private (
             }
             numPossiblyPlayable > colors.count { color => postGame.nextPlayable(color.id) <= num } ||
             colors.forall { color => postGame.nextPlayable(color.id) >= num }
-          }
-        case _ => false
+          case HintColor(color) =>
+            //Affects the first card and cards other than the first are already protected.
+            sh.appliedTo(0) && (1 to (hand.length - 1)).forall { hid => isBelievedProtected(hand(hid)) }
+          case _ => false
+        }
       }
     }
 
@@ -702,7 +706,7 @@ class HeuristicPlayer private (
     else if(
       sh.appliedTo(preMLD) &&
         (preExpectedPlaysNow.isEmpty || preExpectedPlaysNow.exists { hid => sh.appliedTo(hid) }) &&
-        !numberHintWithPlay &&
+        !isPlayEvenIfAffectingMLD &&
         !provablyNotDangerous(possibleCards(hand(preMLD),ck=true),postGame)
     ) {
       addBelief(ProtectedSetInfo(cids = hintCids))
