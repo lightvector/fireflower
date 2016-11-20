@@ -597,10 +597,9 @@ class HeuristicPlayer private (
   }
 
   //TODO some big items not yet implemented!
-  // - discard playable means someone else should play it
   // - hint to cause someone to bomb also indicates protection
   // - finesses/crossovers (for 3p and higher)
-
+  // - protected two green cards with "G", green 2 out. Then hint the first one as 4 - should play the second then the first.
 
   //Handle a hint that we've seen, updating info and beliefmaps.
   //Assumes seenMap is already updated, but nothing else.
@@ -704,7 +703,7 @@ class HeuristicPlayer private (
       sh.appliedTo(preMLD) &&
         (preExpectedPlaysNow.isEmpty || preExpectedPlaysNow.exists { hid => sh.appliedTo(hid) }) &&
         !numberHintWithPlay &&
-        !provablyNotDangerous(possibleCards(preMLD,ck=true),postGame)
+        !provablyNotDangerous(possibleCards(hand(preMLD),ck=true),postGame)
     ) {
       addBelief(ProtectedSetInfo(cids = hintCids))
     }
@@ -1043,6 +1042,9 @@ class HeuristicPlayer private (
       //DANGER AND CLOGGING -----------------------------------------------------------------------------------------
       //Compute eval factors relating to having clogged hands or having discarded useful cards
 
+      //TODO consider making this more principled - score based on the distribution of the remaining deck
+      //and not merely dangerousness?
+
       //How much of the remaining score are we not getting due to danger stuff
       val dangerCount = distinctCards.foldLeft(0) { case (acc,card) =>
         if(card.number >= game.nextPlayable(card.color.id) &&
@@ -1059,6 +1061,11 @@ class HeuristicPlayer private (
       }
       val dangerFactor = Math.max(0.0, 1.0 - (dangerCount / 200.0))
 
+      //TODO try adding a new term that adds a bonus for having at least a few playable cards in hand
+      //so as to encourage saving them from discarding?
+
+      //TODO clogginess should weigh less for protected cards that are playable after another protected card
+      //and or similar, and they haven't been hinted yet.
       //TODO clogginess should be less for cards that are one-away from being playable
       //or for cards that literally are playable.
       val handClogFactor = game.hands.foldLeft(1.0) { case (acc,hand) =>
