@@ -1229,21 +1229,22 @@ class HeuristicPlayer private (
       List((GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),1.0))
     //No hints, must discard
     else if(game.numHints <= 0) {
+      val (mld,dg) = mostLikelyDiscard(pid,game,ck=false)
       //But a discard kills us - so play the first possibly playable card
-      if(rules.stopEarlyLoss && game.numDiscarded >= rules.maxDiscards) {
+      if(rules.stopEarlyLoss && (game.numDiscarded >= rules.maxDiscards || dg <= DISCARD_USEFUL)) {
         val hid = firstPossiblyPlayableHid(game,pid,ck=true).getOrElse(0)
         List((GivePlay(hid),1.0))
       }
-      //Discard doesn't kill us, so just discard
+      //Discard doesn't kill us
       else {
-        val (mld,_dg) = mostLikelyDiscard(pid,game,ck=false)
         List((GiveDiscard(mld),1.0))
       }
     }
     //Neither max nor no hints
     else {
       //Discard kills us - then give a hint //TODO improve this for the last round
-      if(rules.stopEarlyLoss && game.numDiscarded >= rules.maxDiscards) {
+      val (mld,dg) = mostLikelyDiscard(pid,game,ck=false)
+      if(rules.stopEarlyLoss && (game.numDiscarded >= rules.maxDiscards || dg <= DISCARD_USEFUL)) {
         List((GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),1.0))
       }
       else {
@@ -1251,7 +1252,6 @@ class HeuristicPlayer private (
         //underestimates how good UnknownHint is because it doesn't do anything!
         //TODO why is this only possible at such a low value?
         //Assign a 2% probability to giving a hint
-        val (mld,_dg) = mostLikelyDiscard(pid,game,ck=false)
         List(
           // (GiveDiscard(mld),1.0)
           (GiveDiscard(mld),0.98),
@@ -1357,12 +1357,7 @@ class HeuristicPlayer private (
             else if(!game.isDangerous(card)) (card,0.7)
             else (card,0.02) //TODO this should depend on hand position
           }
-        case (DISCARD_USEFUL | DISCARD_PLAYABLE) =>
-          possibleCards(cid,ck=false).map { card =>
-            if(!game.isDangerous(card)) (card,1.0)
-            else (card,0.1)
-          }
-        case (DISCARD_MAYBE_GAMEOVER | DISCARD_GAMEOVER) =>
+        case (DISCARD_USEFUL | DISCARD_PLAYABLE | DISCARD_MAYBE_GAMEOVER | DISCARD_GAMEOVER) =>
           possibleCards(cid,ck=false).map { card => (card,1.0) }
       }
 
