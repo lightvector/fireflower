@@ -862,10 +862,10 @@ class HeuristicPlayer private (
   //due to fears of discarding the exact same card as partner is about to discard. By exping the values, we make
   //the averaging of that scenario have less effect.
   def transformEval(rawEval: Double) = {
-    Math.exp(rawEval / 3.0)
+    Math.exp(rawEval / 2.5)
   }
   def untransformEval(eval: Double) = {
-    Math.log(eval) * 3.0
+    Math.log(eval) * 2.5
   }
   def evalToString(eval: Double) = {
     "%.1f (%.3f)".format(eval,untransformEval(eval))
