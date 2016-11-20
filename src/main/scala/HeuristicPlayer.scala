@@ -438,10 +438,10 @@ class HeuristicPlayer private (
     (numCards-1-pos,dg)
   }
 
-  //Find all the hand positions we think the given player can play.
+  //Find all the hand positions we think the given player can play, by convention and belief and knowledge.
   //Now determines if the cards must be playable now rather than eventually.
   //ck determines if we only check using common knowledge or all observed info
-  def possiblePlays(pid: PlayerId, game: Game, now: Boolean, ck: Boolean): List[HandId] = {
+  def expectedPlays(pid: PlayerId, game: Game, now: Boolean, ck: Boolean): List[HandId] = {
     val hand = game.hands(pid)
     (0 to (hand.numCards-1)).filter { hid =>
       val cid = hand(hid)
@@ -481,6 +481,10 @@ class HeuristicPlayer private (
         }
       }
     }.toList
+  }
+
+  def firstPossiblyPlayableHid(game: Game, pid: PlayerId, ck: Boolean): Option[HandId] = {
+    game.hands(pid).findIdx { cid => !provablyNotPlayable(possibleCards(cid,ck),game) }
   }
 
   // TODO A major item that seems to sink the bot a lot right now is bad handling of discards and plays and bombs
@@ -621,7 +625,7 @@ class HeuristicPlayer private (
     }
 
     //See what cards would have been be possible for the player to play by common knowledge
-    val prePossiblePlaysNow: List[HandId] = possiblePlays(pid,postGame,now=true,ck=true)
+    val preExpectedPlaysNow: List[HandId] = expectedPlays(pid,postGame,now=true,ck=true)
     val preAllBelievedPlays: List[CardId] = allBelievedPlays(postGame) //TODO should this include provable plays?
 
     //See what card that player would have been likely to discard
@@ -643,7 +647,7 @@ class HeuristicPlayer private (
             hintCids.exists { cid =>
               val possibles = possibleCards(cid,ck=true)
               !provablyNotPlayable(possibles,postGame) //could be playable now
-              !prePossiblePlaysNow.exists { hid => cid == hand(hid) } //not possible play before
+              !preExpectedPlaysNow.exists { hid => cid == hand(hid) } //not possible play before
             }
           } && {
             //All cards in hint are either provably junk, possibly playable, or completely known
@@ -698,7 +702,7 @@ class HeuristicPlayer private (
     //then it's a protection hint.
     else if(
       sh.appliedTo(preMLD) &&
-        (prePossiblePlaysNow.isEmpty || prePossiblePlaysNow.exists { hid => sh.appliedTo(hid) }) &&
+        (preExpectedPlaysNow.isEmpty || preExpectedPlaysNow.exists { hid => sh.appliedTo(hid) }) &&
         !numberHintWithPlay &&
         !provablyNotDangerous(possibleCards(preMLD,ck=true),postGame)
     ) {
@@ -771,10 +775,10 @@ class HeuristicPlayer private (
             case Some(b: PlaySequence) =>
               b.info.cids.foreach { cid => visited(cid) = true }
               var count = 0
-              var possiblePlaysUpToNow: List[Card] = List()
+              var expectedPlaysUpToNow: List[Card] = List()
               def possiblyPlayable(card: Card): Boolean = {
                 postGame.isPlayable(card) ||
-                possiblePlaysUpToNow.exists { c => c.color == card.color && c.number == card.number-1 }
+                expectedPlaysUpToNow.exists { c => c.color == card.color && c.number == card.number-1 }
               }
               def partOfThisSequence(cid: CardId): Boolean = {
                 primeBelief(cid) match {
@@ -792,7 +796,7 @@ class HeuristicPlayer private (
                   if(possiblePlays.isEmpty)
                     false
                   else {
-                    possiblePlaysUpToNow = possiblePlays ++ possiblePlaysUpToNow
+                    expectedPlaysUpToNow = possiblePlays ++ expectedPlaysUpToNow
                     true
                   }
                 }
@@ -979,7 +983,6 @@ class HeuristicPlayer private (
               //TODO try stuff like this
               //else if(isBelievedJunk(cid) && (card == Card.NULL || game.isJunk(card)))
               //  0.1
-              //TODO also try adding a bonus for knowing a card exactly if it's useful
               else
                 0.0
             }
@@ -1206,26 +1209,44 @@ class HeuristicPlayer private (
 
   //Returns a probability distribution on possible actions the next player might do
   def likelyActionsSimple(pid: PlayerId, game: Game): List[(GiveAction,Double)] = {
-    val playsNow: List[HandId] = possiblePlays(pid, game, now=true, ck=false)
+    val playsNow: List[HandId] = expectedPlays(pid, game, now=true, ck=false)
+    //Play if possible
     if(playsNow.nonEmpty)
       List((GivePlay(playsNow.head),1.0))
+    //Give a hint if at max hints //TODO improve this for the last round
     else if(game.numHints >= rules.maxHints)
       List((GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),1.0))
+    //No hints, must discard
     else if(game.numHints <= 0) {
-      val (mld,_dg) = mostLikelyDiscard(pid,game,ck=false)
-      List((GiveDiscard(mld),1.0))
+      //But a discard kills us - so play the first possibly playable card
+      if(rules.stopEarlyLoss && game.numDiscarded >= rules.maxDiscards) {
+        val hid = firstPossiblyPlayableHid(game,pid,ck=true).getOrElse(0)
+        List((GivePlay(hid),1.0))
+      }
+      //Discard doesn't kill us, so just discard
+      else {
+        val (mld,_dg) = mostLikelyDiscard(pid,game,ck=false)
+        List((GiveDiscard(mld),1.0))
+      }
     }
+    //Neither max nor no hints
     else {
-      //TODO pretty inaccurate, make this smarter. Note though that the evaluation
-      //underestimates how good UnknownHint is because it doesn't do anything!
-      //TODO why is this only possible at such a low value?
-      //Assign a 2% probability to giving a hint
-      val (mld,_dg) = mostLikelyDiscard(pid,game,ck=false)
-      List(
-        // (GiveDiscard(mld),1.0)
-        (GiveDiscard(mld),0.98),
-        (GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),0.02)
-      )
+      //Discard kills us - then give a hint //TODO improve this for the last round
+      if(rules.stopEarlyLoss && game.numDiscarded >= rules.maxDiscards) {
+        List((GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),1.0))
+      }
+      else {
+        //TODO pretty inaccurate, make this smarter. Note though that the evaluation
+        //underestimates how good UnknownHint is because it doesn't do anything!
+        //TODO why is this only possible at such a low value?
+        //Assign a 2% probability to giving a hint
+        val (mld,_dg) = mostLikelyDiscard(pid,game,ck=false)
+        List(
+          // (GiveDiscard(mld),1.0)
+          (GiveDiscard(mld),0.98),
+          (GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),0.02)
+        )
+      }
     }
   }
 
@@ -1257,7 +1278,7 @@ class HeuristicPlayer private (
     //and it's the last turn so you might as well guess.
 
     //Try all play actions
-    val playsNow: List[HandId] = possiblePlays(myPid, game, now=true, ck=false)
+    val playsNow: List[HandId] = expectedPlays(myPid, game, now=true, ck=false)
     playsNow.foreach { hid =>
       //Right now, we only play cards we think are probably playable, so get all the possibilities
       //and filter down conditioning on the card being playable, and average over the results
@@ -1276,6 +1297,30 @@ class HeuristicPlayer private (
       val value = sum / weightSum
       recordAction(ga,value)
     }
+
+    //Try playing our first possibly-playable-card
+    //TODO this makes things worse - does the eval actually cause us to want to do this enough for
+    //it to hurt the bot?!?
+    /*
+    firstPossiblyPlayableHid(game,myPid,ck=false) match {
+      case None => ()
+      case Some(hid) =>
+        val cid = game.hands(myPid)(hid)
+        val possibles = possibleCards(cid,ck=false)
+        val ga = GivePlay(hid)
+        var sum = 0.0
+        var weightSum = 0.0
+        val evals = possibles.foreach { card =>
+          val value = evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
+          if(!value.isNaN()) {
+            sum += value
+            weightSum += 1.0
+          }
+        }
+        val value = sum / weightSum
+        recordAction(ga,value)
+    }
+     */
 
     //Try our most likely discard action
     if(game.numHints < rules.maxHints) {

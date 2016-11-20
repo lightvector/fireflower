@@ -109,6 +109,22 @@ class Hand private (
     else None
   }
 
+
+  def findIdx(f: CardId => Boolean): Option[HandId] = {
+    var i = 0
+    var hid = 0
+    var found = false
+    while(i < numCards && !found) {
+      if(f(cards(i))) {
+        hid = i
+        found = true
+      }
+      i += 1
+    }
+    if(found) Some(hid)
+    else None
+  }
+
   //Makes a copy
   def cardArray(): Array[CardId] = {
     Array.tabulate(numCards) { i => cards(i) }
