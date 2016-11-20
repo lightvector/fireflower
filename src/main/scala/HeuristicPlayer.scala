@@ -754,11 +754,11 @@ class HeuristicPlayer private (
             //Filter protected sets down to only cards that could be dangerous
             case Some(b: ProtectedSet) =>
               b.info.cids.foreach { cid => visited(cid) = true }
-              val (newCids,filteredCids) = b.info.cids.partition { cid => !provablyJunk(possibleCards(cid,ck=true),postGame) }
-              if(filteredCids.length > 0) {
-                addBelief(ProtectedSetInfo(cids = newCids))
-                addBelief(JunkSetInfo(cids = filteredCids))
-              }
+              val (remainingCids,filteredCids) = b.info.cids.partition { cid => !provablyJunk(possibleCards(cid,ck=true),postGame) }
+              val (newCids,playCids) = remainingCids.partition { cid => !provablyPlayableIfUseful(possibleCards(cid,ck=true),postGame) }
+              if(filteredCids.length > 0) addBelief(JunkSetInfo(cids = filteredCids))
+              if(playCids.length > 0) addBelief(PlaySequenceInfo(cids = playCids))
+              if(newCids.length < b.info.cids.length) addBelief(ProtectedSetInfo(cids = newCids))
 
             //Filter junk sets down to only cards that could be safe
             case Some(b: JunkSet) =>
