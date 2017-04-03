@@ -209,7 +209,7 @@ object PlayerTests {
    [info] Average Score: 17.637
    [info] Average Utility: 36.824
    [info]
-   [info] Time: 1445.422081088
+   [info] Time: 1060.941957088
 
    */
 

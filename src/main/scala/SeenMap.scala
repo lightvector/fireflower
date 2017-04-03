@@ -49,19 +49,26 @@ class SeenMap private (
   val distinctCards: Array[Card]
 ) {
 
+  def copyTo(other: SeenMap): Unit = {
+    Array.copy(cards, 0, other.cards, 0, cards.size)
+    Array.copy(numUnseenByCard, 0, other.numUnseenByCard, 0, numUnseenByCard.size)
+    other.numUnseen = numUnseen
+    Array.copy(distinctCards, 0, other.distinctCards, 0, distinctCards.size)
+  }
+
   def apply(cid: CardId): Card = {
     cards(cid)
   }
 
   //Swap the cards mapped to two card ids
-  def swap(c0: CardId, c1: CardId) = {
+  def swap(c0: CardId, c1: CardId): Unit = {
     val tmp = cards(c0)
     cards(c0) = cards(c1)
     cards(c1) = tmp
   }
 
   //Set the mapping of card for a card id, does not check validity
-  def update(cid: CardId, card: Card) = {
+  def update(cid: CardId, card: Card): Unit = {
     val oldCard = cards(cid)
     if(oldCard != Card.NULL) {
       numUnseenByCard(oldCard.arrayIdx) += 1

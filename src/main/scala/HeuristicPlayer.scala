@@ -58,12 +58,11 @@ object HeuristicPlayer extends PlayerGen {
       maxHints = rules.maxHints,
       distinctCards = rules.cards().distinct.toList,
       numCardsInitial = numCardsInitial,
+      colors = rules.colors(),
       seenMap = SeenMap.empty(rules),
       seenMapCK = SeenMap.empty(rules),
       hintedMap = CardPropertyMap(rules),
-      beliefMap = CardPropertyMap(rules),
-      colors = rules.colors(),
-      isInconsistent = false
+      beliefMap = CardPropertyMap(rules)
     )
   }
 
@@ -80,8 +79,7 @@ object HeuristicPlayer extends PlayerGen {
       seenMapCK = SeenMap(that.seenMapCK),
       hintedMap = CardPropertyMap(that.hintedMap),
       beliefMap = CardPropertyMap(that.beliefMap),
-      colors = that.colors,
-      isInconsistent = that.isInconsistent
+      colors = that.colors
     )
   }
 
@@ -93,7 +91,15 @@ object HeuristicPlayer extends PlayerGen {
   }
 }
 
+case class SavedState(
+  val seenMap: SeenMap,
+  val seenMapCK: SeenMap,
+  val hintedMap: CardPropertyMap[Hinted],
+  val beliefMap: CardPropertyMap[Belief]
+)
+
 class HeuristicPlayer private (
+  //IMMUTABLE-------------------------------------------
   val myPid: Int,
   val rules: Rules,
 
@@ -104,6 +110,8 @@ class HeuristicPlayer private (
   val numCardsInitial: Array[Int], //indexed by card.arrayIdx, counts the quantity of that card in the whole deck
   val colors: Array[Color],        //an array of the colors in this game
 
+  //STATE-----------------------------------------------
+
   //Tracks what cards are visible by us
   var seenMap: SeenMap,
   //Tracks what cards are visible as common knowledge
@@ -112,11 +120,23 @@ class HeuristicPlayer private (
   //Logical information we've received via hints, tracked by card
   val hintedMap: CardPropertyMap[Hinted],
   //Beliefs we have about cards based on observations
-  val beliefMap: CardPropertyMap[Belief],
-
-  //Set to true if we have actually received contradictory observations or info
-  var isInconsistent: Boolean
+  val beliefMap: CardPropertyMap[Belief]
 ) extends Player {
+
+  def saveState(): SavedState = {
+    SavedState(
+      seenMap = SeenMap(seenMap),
+      seenMapCK = SeenMap(seenMapCK),
+      hintedMap = CardPropertyMap(hintedMap),
+      beliefMap = CardPropertyMap(beliefMap)
+    )
+  }
+  def restoreState(saved: SavedState): Unit = {
+    saved.seenMap.copyTo(seenMap)
+    saved.seenMapCK.copyTo(seenMapCK)
+    saved.hintedMap.copyTo(hintedMap)
+    saved.beliefMap.copyTo(beliefMap)
+  }
 
   //Checks whether the current game state is one where we should be printing debug messages.
   def debugging(game: Game): Boolean = {
@@ -128,8 +148,8 @@ class HeuristicPlayer private (
 
   //Update the seen maps based on a new incoming game state
   def updateSeenMap(game: Game): Unit = {
-    seenMap = SeenMap(game.seenMap)
-    seenMapCK = SeenMap(game.seenMap)
+    game.seenMap.copyTo(seenMap)
+    game.seenMap.copyTo(seenMapCK)
     (0 to (rules.numPlayers-1)).foreach { pid =>
       game.hands(pid).foreach { cid => seenMapCK(cid) = Card.NULL }
     }
@@ -816,43 +836,15 @@ class HeuristicPlayer private (
     }
   }
 
-  //Check if the current state appears to be inconsistent, and if so, flag it.
-  //Not exhaustive, but should catch most of the ones that might occur in practice.
+  //Check if the current state appears to be consistent.
+  //Not exhaustive, but should catch most inconsistencies that might occur in practice.
   //(i.e. discarding things assuming them to be X and then finding out later that X must
   //still be in your hand due to more complex inferences that you didn't work out then)
-  def checkForInconsistencies(postGame: Game) = {
-    val consistent =
-      postGame.hands.forall { hand =>
-        hand.forall { cid => hasPossible(cid) }
-      }
-    if(!consistent)
-      isInconsistent = true
-  }
-
-  override def handleGameStart(game: Game): Unit = {
-    updateSeenMap(game)
-  }
-
-  override def handleSeenAction(sa: SeenAction, postGame: Game): Unit = {
-    if(!isInconsistent) {
-      updateSeenMap(postGame)
-      sa match {
-        case (sd: SeenDiscard) =>
-          handleSeenDiscard(sd,postGame)
-        case (sp: SeenPlay) =>
-          handleSeenPlay(sp,postGame)
-        case (sb: SeenBomb) =>
-          handleSeenBomb(sb,postGame)
-        case (sh: SeenHint) =>
-          handleSeenHint(sh,postGame)
-      }
-
-      checkForInconsistencies(postGame)
-      if(!isInconsistent)
-        simplifyBeliefs(postGame)
+  def checkIsConsistent(postGame: Game): Boolean = {
+    postGame.hands.forall { hand =>
+      hand.forall { cid => hasPossible(cid) }
     }
   }
-
 
   def softPlus(x: Double, width: Double) = {
     if(x/width >= 40.0) //To avoid floating point overflow
@@ -880,9 +872,7 @@ class HeuristicPlayer private (
   val scoreDropPerLostPoint = 3.0
 
   def staticEvalGame(game: Game): Double = {
-    if(isInconsistent)
-      Double.NaN
-    else if(game.isDone()) {
+    if(game.isDone()) {
       if(rules.stopEarlyLoss)
         transformEval(game.numPlayed.toDouble)
       else
@@ -1171,12 +1161,76 @@ class HeuristicPlayer private (
     val gameCopy = Game(game)
     val playerCopy = HeuristicPlayer(this,myPid)
     assumingCards.foreach { case (cid,card) => gameCopy.seenMap(cid) = card}
-    actions.foreach { ga =>
-      val sa = gameCopy.seenAction(ga)
-      gameCopy.doAction(ga)
-      playerCopy.handleSeenAction(sa, gameCopy)
+    def loop(actions: List[GiveAction]): Double = {
+      actions match {
+        case Nil =>
+          playerCopy.staticEvalGame(gameCopy)
+        case ga :: tail =>
+          val sa = gameCopy.seenAction(ga)
+          gameCopy.doAction(ga)
+          val consistent = playerCopy.doHandleSeenAction(sa, gameCopy)
+          if(!consistent)
+            Double.NaN
+          else
+            loop(tail)
+      }
     }
-    playerCopy.staticEvalGame(gameCopy)
+    loop(actions)
+  }
+
+  //Called at the start of the game once
+  def doHandleGameStart(game: Game): Unit = {
+    updateSeenMap(game)
+  }
+
+
+  //Update player for a given action. Return true if game still appears consistent, false otherwise.
+  def doHandleSeenAction(sa: SeenAction, postGame: Game): Boolean = {
+    updateSeenMap(postGame)
+    sa match {
+      case (sd: SeenDiscard) =>
+        handleSeenDiscard(sd,postGame)
+      case (sp: SeenPlay) =>
+        handleSeenPlay(sp,postGame)
+      case (sb: SeenBomb) =>
+        handleSeenBomb(sb,postGame)
+      case (sh: SeenHint) =>
+        handleSeenHint(sh,postGame)
+    }
+
+    val consistent = checkIsConsistent(postGame)
+    if(consistent)
+      simplifyBeliefs(postGame)
+    consistent
+  }
+
+  def average[T](list: List[T])(f: (T,Double) => Double): Double = {
+    var sum = 0.0
+    var weightSum = 0.0
+
+    list.foreach { elt =>
+      val weight = 1.0
+      val eval = f(elt,weight)
+      if(!eval.isNaN()) {
+        sum += eval * weight
+        weightSum += weight
+      }
+    }
+    sum / weightSum
+  }
+
+  def weightedAverage[T](list: List[(T,Double)])(f: (T,Double) => Double): Double = {
+    var sum = 0.0
+    var weightSum = 0.0
+
+    list.foreach { case (elt,weight) =>
+      val eval = f(elt,weight)
+      if(!eval.isNaN()) {
+        sum += eval * weight
+        weightSum += weight
+      }
+    }
+    sum / weightSum
   }
 
   //Perform the given action assuming the given CardIds are the given Cards and compute the expected
@@ -1187,9 +1241,9 @@ class HeuristicPlayer private (
     assumingCards.foreach { case (cid,card) => nextGame.seenMap(cid) = card }
     val sa = nextGame.seenAction(ga)
     nextGame.doAction(ga)
-    nextPlayer.handleSeenAction(sa, nextGame.hiddenFor(nextPid))
+    val consistent = nextPlayer.doHandleSeenAction(sa, nextGame.hiddenFor(nextPid))
 
-    if(nextPlayer.isInconsistent)
+    if(!consistent)
       Double.NaN
     else {
       val nextActions = nextPlayer.likelyActionsSimple(nextPid,nextGame)
@@ -1284,6 +1338,8 @@ class HeuristicPlayer private (
       }
     }
 
+
+
     //TODO allow trying to playing a card without knowing if it's playable if it could be playable
     //such as at the end of the game when you know it's in your hand but you haven't been hinted
     //and it's the last turn so you might as well guess.
@@ -1296,16 +1352,10 @@ class HeuristicPlayer private (
       val cid = game.hands(myPid)(hid)
       val possibles = possibleCards(cid,ck=false).filter { card => game.isPlayable(card) }
       val ga = GivePlay(hid)
-      var sum = 0.0
-      var weightSum = 0.0
-      val evals = possibles.foreach { card =>
-        val value = evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
-        if(!value.isNaN()) {
-          sum += value
-          weightSum += 1.0
-        }
+
+      val value = average(possibles) { (card,_) =>
+        evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
       }
-      val value = sum / weightSum
       recordAction(ga,value)
     }
 
@@ -1319,16 +1369,9 @@ class HeuristicPlayer private (
         val cid = game.hands(myPid)(hid)
         val possibles = possibleCards(cid,ck=false)
         val ga = GivePlay(hid)
-        var sum = 0.0
-        var weightSum = 0.0
-        val evals = possibles.foreach { card =>
-          val value = evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
-          if(!value.isNaN()) {
-            sum += value
-            weightSum += 1.0
-          }
+        val value = weightedAverage(possibles) { card =>
+          evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
         }
-        val value = sum / weightSum
         recordAction(ga,value)
     }
      */
@@ -1364,16 +1407,9 @@ class HeuristicPlayer private (
       //TODO we can probably reduce code duplication here
       //Compute the average eval weighted by the weight of each card it could be.
       val ga = GiveDiscard(mld)
-      var sum = 0.0
-      var wsum = 0.0
-      val evals = possiblesAndWeights.foreach { case (card,weight) =>
-        val value = evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
-        if(!value.isNaN()) {
-          sum += weight * value
-          wsum += weight
-        }
+      val value = weightedAverage(possiblesAndWeights) { (card,_) =>
+        evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
       }
-      val value = sum / wsum
       recordAction(ga,value)
 
       //Try discarding each of our playables
@@ -1382,16 +1418,9 @@ class HeuristicPlayer private (
           val cid = game.hands(myPid)(hid)
           val possiblesAndWeights = possibleCards(cid,ck=false).flatMap { card => if(game.isPlayable(card)) Some((card,1.0)) else None }
           val ga = GiveDiscard(hid)
-          var sum = 0.0
-          var wsum = 0.0
-          val evals = possiblesAndWeights.foreach { case (card,weight) =>
-            val value = evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
-            if(!value.isNaN()) {
-              sum += weight * value
-              wsum += weight
-            }
+          val value = weightedAverage(possiblesAndWeights) { (card,_) =>
+            evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
           }
-          val value = sum / wsum
           recordAction(ga,value)
         }
       }
@@ -1413,6 +1442,19 @@ class HeuristicPlayer private (
 
     //And return the best action
     bestAction
+  }
+
+
+
+  //INTERFACE --------------------------------------------------------------------
+
+  override def handleGameStart(game: Game): Unit = {
+    doHandleGameStart(game)
+  }
+
+  override def handleSeenAction(sa: SeenAction, postGame: Game): Unit = {
+    val consistent = doHandleSeenAction(sa,postGame)
+    assert(consistent)
   }
 
 }

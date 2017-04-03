@@ -19,6 +19,10 @@ class CardPropertyMap[T] private (
   val arr: Array[List[T]]
 ) {
 
+  def copyTo(other: CardPropertyMap[T]): Unit = {
+    Array.copy(arr, 0, other.arr, 0, arr.size)
+  }
+
   //The most recently added values are at the front of the list
   def apply(cid: CardId): List[T] = {
     arr(cid)
