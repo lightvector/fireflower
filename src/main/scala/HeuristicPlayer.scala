@@ -66,23 +66,6 @@ object HeuristicPlayer extends PlayerGen {
     )
   }
 
-  //Copy constructor
-  def apply(that: HeuristicPlayer, newMyPid:Int): HeuristicPlayer = {
-    new HeuristicPlayer(
-      myPid = newMyPid,
-      rules = that.rules,
-      possibleHintTypes = that.possibleHintTypes.clone(),
-      maxHints = that.maxHints,
-      distinctCards = that.distinctCards,
-      numCardsInitial = that.numCardsInitial,
-      seenMap = SeenMap(that.seenMap),
-      seenMapCK = SeenMap(that.seenMapCK),
-      hintedMap = CardPropertyMap(that.hintedMap),
-      beliefMap = CardPropertyMap(that.beliefMap),
-      colors = that.colors
-    )
-  }
-
   //PlayerGen interface - Generate a set of players for a game.
   def genPlayers(rules: Rules, seed: Long): Array[Player] = {
     (0 to (rules.numPlayers-1)).map { myPid =>
@@ -113,14 +96,17 @@ class HeuristicPlayer private (
   //STATE-----------------------------------------------
 
   //Tracks what cards are visible by us
-  var seenMap: SeenMap,
+  val seenMap: SeenMap,
   //Tracks what cards are visible as common knowledge
-  var seenMapCK: SeenMap,
+  val seenMapCK: SeenMap,
 
   //Logical information we've received via hints, tracked by card
   val hintedMap: CardPropertyMap[Hinted],
-  //Beliefs we have about cards based on observations
+  //Beliefs we have about cards based on conventions.
+  //In general, it's important that this map doesn't contain things that can be inferred only based on
+  //private information because it's used to predict other players' actions.
   val beliefMap: CardPropertyMap[Belief]
+
 ) extends Player {
 
   def saveState(): SavedState = {
@@ -765,7 +751,7 @@ class HeuristicPlayer private (
     }
   }
 
-  //Simplify and prune beliefs based on actual observations that may contradict them.
+  //Simplify and prune beliefs based on actual common-knowledge observations that may contradict them.
   def simplifyBeliefs(postGame: Game) = {
     //Array to avoid visiting each cid more than once
     val visited = Array.fill(rules.deckSize)(false)
@@ -1155,29 +1141,6 @@ class HeuristicPlayer private (
     }
   }
 
-  //Perform the given actions assuming the given CardIds are the given Cards, and return the result
-  //of the static evaluation on the resulting game state.
-  def evalActions(game: Game, actions: List[GiveAction], assumingCards: List[(CardId,Card)]): Double = {
-    val gameCopy = Game(game)
-    val playerCopy = HeuristicPlayer(this,myPid)
-    assumingCards.foreach { case (cid,card) => gameCopy.seenMap(cid) = card}
-    def loop(actions: List[GiveAction]): Double = {
-      actions match {
-        case Nil =>
-          playerCopy.staticEvalGame(gameCopy)
-        case ga :: tail =>
-          val sa = gameCopy.seenAction(ga)
-          gameCopy.doAction(ga)
-          val consistent = playerCopy.doHandleSeenAction(sa, gameCopy)
-          if(!consistent)
-            Double.NaN
-          else
-            loop(tail)
-      }
-    }
-    loop(actions)
-  }
-
   //Called at the start of the game once
   def doHandleGameStart(game: Game): Unit = {
     updateSeenMap(game)
@@ -1202,6 +1165,43 @@ class HeuristicPlayer private (
     if(consistent)
       simplifyBeliefs(postGame)
     consistent
+  }
+
+  //Perform the given action assuming the given CardIds are the given Cards, and recursively search and evaluate the result.
+  //Assumes other players act "simply", according to evalLikelyActionSimple
+  //At the end, restore to the saved state.
+  def tryAction(game: Game, ga: GiveAction, assumingCards: List[(CardId,Card)], cDepth: Int, rDepth: Int, saved: SavedState): Double = {
+    val gameCopy = Game(game)
+    assumingCards.foreach { case (cid,card) => gameCopy.seenMap(cid) = card }
+
+    val sa = gameCopy.seenAction(ga)
+    gameCopy.doAction(ga)
+
+    //We need to check consistency in case the act of doing the action makes a higher-order deduction clear that we hadn't deduced
+    //before that the position is actually impossible, since our logical inferencing isn't 100% complete.
+    //doHandleSeenAction returns whether it finds things to be consistent or not.
+    val consistent = doHandleSeenAction(sa, gameCopy)
+
+    if(!consistent)
+      Double.NaN
+    else {
+      val newCDepth = cDepth+1
+      val newRDepth = rDepth-1
+      val eval = {
+        if(newRDepth <= 0)
+          staticEvalGame(gameCopy)
+        else {
+          if(gameCopy.curPlayer == myPid) {
+            val (_,eval) = doGetAction(gameCopy,newCDepth,newRDepth)
+            eval
+          }
+          else
+            evalLikelyActionSimple(gameCopy,newCDepth,newRDepth)
+        }
+      }
+      restoreState(saved)
+      eval
+    }
   }
 
   def average[T](list: List[T])(f: (T,Double) => Double): Double = {
@@ -1233,90 +1233,78 @@ class HeuristicPlayer private (
     sum / weightSum
   }
 
-  //Perform the given action assuming the given CardIds are the given Cards and compute the expected
-  //evaluation averaging over a prediction of what the next player might do.
-  def evalLikelyActionSimple(nextPid: PlayerId, game: Game, ga: GiveAction, assumingCards: List[(CardId,Card)]): Double = {
-    val nextPlayer = HeuristicPlayer(this,nextPid)
-    val nextGame = Game(game)
-    assumingCards.foreach { case (cid,card) => nextGame.seenMap(cid) = card }
-    val sa = nextGame.seenAction(ga)
-    nextGame.doAction(ga)
-    val consistent = nextPlayer.doHandleSeenAction(sa, nextGame.hiddenFor(nextPid))
-
-    if(!consistent)
-      Double.NaN
-    else {
-      val nextActions = nextPlayer.likelyActionsSimple(nextPid,nextGame)
-
-      var sum = 0.0
-      var probSum = 0.0
-      nextActions.foreach { case (nextAction,prob) =>
-        val eval = evalActions(game,List(ga,nextAction),assumingCards)
-        if(!eval.isNaN()) {
-          sum += eval * prob
-          probSum += prob
-        }
-        if(debugging(game)) {
-          println("Action %-10s assume %s likely next: %-12s Prob: %.3f Eval: %s".format(
-            game.giveActionToString(ga),
-            (assumingCards.map(_._2).map(_.toString(useAnsiColors=true)).mkString("")),
-            game.giveActionToString(nextAction),
-            prob,
-            evalToString(eval)
-          ))
-        }
+  //Recursively evaluate averaging over a prediction of what the next player might do.
+  def evalLikelyActionSimple(game: Game, cDepth: Int, rDepth: Int): Double = {
+    val saved = saveState()
+    val nextActions = likelyActionsSimple(game.curPlayer,game,saved)
+    weightedAverage(nextActions) { (nextAction,prob) =>
+      val eval = tryAction(game,nextAction,List(),cDepth,rDepth,saved)
+      if(debugging(game)) {
+        println("Likely next: %-12s Weight: %.3f Eval: %s".format(
+          game.giveActionToString(nextAction),
+          prob,
+          evalToString(eval)
+        ))
       }
-      sum / probSum
+      eval
     }
   }
 
   //TODO make this better
 
-  //Returns a probability distribution on possible actions the next player might do
-  def likelyActionsSimple(pid: PlayerId, game: Game): List[(GiveAction,Double)] = {
-    val playsNow: List[HandId] = expectedPlays(pid, game, now=true, ck=false)
-    //Play if possible
-    if(playsNow.nonEmpty)
-      List((GivePlay(playsNow.head),1.0))
-    //Give a hint if at max hints //TODO improve this for the last round
-    else if(game.numHints >= rules.maxHints)
-      List((GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),1.0))
-    //No hints, must discard
-    else if(game.numHints <= 0) {
-      val (mld,dg) = mostLikelyDiscard(pid,game,ck=false)
-      //But a discard kills us - so play the first possibly playable card
-      if(rules.stopEarlyLoss && (game.numDiscarded >= rules.maxDiscards || dg <= DISCARD_USEFUL)) {
-        val hid = firstPossiblyPlayableHid(game,pid,ck=true).getOrElse(0)
-        List((GivePlay(hid),1.0))
-      }
-      //Discard doesn't kill us
-      else {
-        List((GiveDiscard(mld),1.0))
-      }
-    }
-    //Neither max nor no hints
-    else {
-      //Discard kills us - then give a hint //TODO improve this for the last round
-      val (mld,dg) = mostLikelyDiscard(pid,game,ck=false)
-      if(rules.stopEarlyLoss && (game.numDiscarded >= rules.maxDiscards || dg <= DISCARD_USEFUL)) {
+  //Returns a probability distribution on possible actions the next player might do. Modifies the state to
+  //reflect what that player sees, restoring to the given state afterwards.
+  def likelyActionsSimple(pid: PlayerId, game: Game, saved: SavedState): List[(GiveAction,Double)] = {
+    updateSeenMap(game.hiddenFor(pid))
+    val actions = {
+      val playsNow: List[HandId] = expectedPlays(pid, game, now=true, ck=false)
+      //Play if possible
+      if(playsNow.nonEmpty)
+        List((GivePlay(playsNow.head),1.0))
+      //Give a hint if at max hints //TODO improve this for the last round
+      else if(game.numHints >= rules.maxHints)
         List((GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),1.0))
+      //No hints, must discard
+      else if(game.numHints <= 0) {
+        val (mld,dg) = mostLikelyDiscard(pid,game,ck=false)
+        //But a discard kills us - so play the first possibly playable card
+        if(rules.stopEarlyLoss && (game.numDiscarded >= rules.maxDiscards || dg <= DISCARD_USEFUL)) {
+          val hid = firstPossiblyPlayableHid(game,pid,ck=true).getOrElse(0)
+          List((GivePlay(hid),1.0))
+        }
+        //Discard doesn't kill us
+        else {
+          List((GiveDiscard(mld),1.0))
+        }
       }
+      //Neither max nor no hints
       else {
-        //TODO pretty inaccurate, make this smarter. Note though that the evaluation
-        //underestimates how good UnknownHint is because it doesn't do anything!
-        //TODO why is this only possible at such a low value?
-        //Assign a 2% probability to giving a hint
-        List(
-          // (GiveDiscard(mld),1.0)
-          (GiveDiscard(mld),0.98),
-          (GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),0.02)
-        )
+        //Discard kills us - then give a hint //TODO improve this for the last round
+        val (mld,dg) = mostLikelyDiscard(pid,game,ck=false)
+        if(rules.stopEarlyLoss && (game.numDiscarded >= rules.maxDiscards || dg <= DISCARD_USEFUL)) {
+          List((GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),1.0))
+        }
+        else {
+          //TODO pretty inaccurate, make this smarter. Note though that the evaluation
+          //underestimates how good UnknownHint is because it doesn't do anything!
+          //TODO why is this only possible at such a low value?
+          //Assign a 2% probability to giving a hint
+          List(
+            // (GiveDiscard(mld),1.0)
+            (GiveDiscard(mld),0.98),
+            (GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),0.02)
+          )
+        }
       }
     }
+    restoreState(saved)
+    actions
   }
 
-  //Interface method. This is the top-level action function!
-  override def getAction(game: Game): GiveAction = {
+  //Get an action for this player in the current game state via a short search.
+  //rDepth is the remaining number of turns until we evaluate.
+  //Returns the action and its evaluation.
+  def doGetAction(game: Game, cDepth: Int, rDepth: Int): (GiveAction,Double) = {
     assert(myPid == game.curPlayer)
     val nextPid = (myPid+1) % rules.numPlayers
 
@@ -1324,6 +1312,7 @@ class HeuristicPlayer private (
     //to store the best one, which we return at the end.
     var bestAction: GiveAction = GivePlay(0) //always legal
     var bestActionValue: Double = -10000.0
+    val saved = saveState()
 
     def recordAction(ga: GiveAction, value: Double) = {
       if(!value.isNaN() && value > bestActionValue) {
@@ -1354,7 +1343,7 @@ class HeuristicPlayer private (
       val ga = GivePlay(hid)
 
       val value = average(possibles) { (card,_) =>
-        evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
+        tryAction(game, ga, assumingCards=List((cid,card)), cDepth, rDepth, saved)
       }
       recordAction(ga,value)
     }
@@ -1370,7 +1359,7 @@ class HeuristicPlayer private (
         val possibles = possibleCards(cid,ck=false)
         val ga = GivePlay(hid)
         val value = weightedAverage(possibles) { card =>
-          evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
+          tryAction(game, ga, assumingCards=List((cid,card)), cDepth, rDepth, saved)
         }
         recordAction(ga,value)
     }
@@ -1408,7 +1397,7 @@ class HeuristicPlayer private (
       //Compute the average eval weighted by the weight of each card it could be.
       val ga = GiveDiscard(mld)
       val value = weightedAverage(possiblesAndWeights) { (card,_) =>
-        evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
+        tryAction(game, ga, assumingCards=List((cid,card)), cDepth, rDepth, saved)
       }
       recordAction(ga,value)
 
@@ -1419,7 +1408,7 @@ class HeuristicPlayer private (
           val possiblesAndWeights = possibleCards(cid,ck=false).flatMap { card => if(game.isPlayable(card)) Some((card,1.0)) else None }
           val ga = GiveDiscard(hid)
           val value = weightedAverage(possiblesAndWeights) { (card,_) =>
-            evalLikelyActionSimple(nextPid,game,ga,assumingCards=List((cid,card)))
+            tryAction(game, ga, assumingCards=List((cid,card)), cDepth, rDepth, saved)
           }
           recordAction(ga,value)
         }
@@ -1433,7 +1422,7 @@ class HeuristicPlayer private (
         possibleHintTypes.foreach { hint =>
           val ga = GiveHint((nextPid+pidOffset) % rules.numPlayers,hint)
           if(game.isLegal(ga)) {
-            val value = evalLikelyActionSimple(nextPid,game,ga,assumingCards=List())
+            val value = tryAction(game, ga, assumingCards=List(), cDepth, rDepth, saved)
             recordAction(ga,value)
           }
         }
@@ -1441,10 +1430,8 @@ class HeuristicPlayer private (
     }
 
     //And return the best action
-    bestAction
+    (bestAction,bestActionValue)
   }
-
-
 
   //INTERFACE --------------------------------------------------------------------
 
@@ -1455,6 +1442,11 @@ class HeuristicPlayer private (
   override def handleSeenAction(sa: SeenAction, postGame: Game): Unit = {
     val consistent = doHandleSeenAction(sa,postGame)
     assert(consistent)
+  }
+
+  override def getAction(game: Game): GiveAction = {
+    val (action,_eval) = doGetAction(game,cDepth=0,rDepth=2)
+    action
   }
 
 }
