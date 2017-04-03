@@ -528,13 +528,16 @@ class HeuristicPlayer private (
             val hasCardCount = hasCard.count(x => x == true)
 
             //If nobody has that card, assume we do, else if there is a unique other person, assume they do.
-            val targetedPid = {
-              if(hasCardCount == 0 && myPid != discardPid) Some(myPid)
-              else if(hasCardCount == 1) (0 to (rules.numPlayers - 1)).find { pid => hasCard(pid) }
-              else None
+            val targetedPids: List[PlayerId] = {
+              if(hasCardCount == 0 && myPid != discardPid) List(myPid)
+              else if(hasCardCount == 0 && myPid == discardPid) {
+                (0 to rules.numPlayers-1).filter { pid => pid != myPid }.toList
+              }
+              else if(hasCardCount == 1) (0 to (rules.numPlayers - 1)).filter { pid => hasCard(pid) }.toList
+              else List()
             }
 
-            targetedPid.foreach { pid =>
+            targetedPids.foreach { pid =>
               //If there is a positively hinted card that by CK could be the card, mark the first such card as playable if it
               //is not already marked. Else mark the first card that could by CK be it if not already marked.
               val hand = postGame.hands(pid)
