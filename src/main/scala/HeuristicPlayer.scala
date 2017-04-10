@@ -901,23 +901,37 @@ class HeuristicPlayer private (
       //PRELIMARIES-----------------------------------------------------------------------------------------
       //Compute some basic bounds and values used in the eval
 
-      val turnsLeft = {
-        if(game.finalTurnsLeft >= 0) game.finalTurnsLeft
-        else game.deck.length + rules.numPlayers
+      val turnsWithPossiblePlayLeft = {
+        //On the last round
+        if(game.finalTurnsLeft >= 0) {
+          //Count remaining players who have a turn
+          (0 to game.finalTurnsLeft-1).count { pidOffset =>
+            val pid = (game.curPlayer + pidOffset) % rules.numPlayers
+            //Whose hand has at least one possibly playable card.
+            game.hands(pid).exists { cid => !provablyNotPlayable(possibleCards(cid,ck=false),game) }
+          }
+        }
+        else {
+          //Normally, simply the number of possible playing turns left in the game
+          val base = game.deck.length + rules.numPlayers
+          //TODO But we should subtract off if anyone has provably too many cards to play.
+          base
+        }
       }
       val maxPlaysLeft = {
         if(rules.stopEarlyLoss)
           rules.maxScore - game.numPlayed
         else {
-          var count = 0
+          //Count up cards that are still useful taking into account dead piles.
+          var usefulCardCount = 0
           colors.foreach { color =>
             var number = game.nextPlayable(color.id)
             while(game.numCardRemaining(Card.arrayIdx(color,number)) > 0 && number <= rules.maxNumber) {
-              count += 1
+              usefulCardCount += 1
               number += 1
             }
           }
-          Math.min(count,turnsLeft)
+          Math.min(usefulCardCount,turnsWithPossiblePlayLeft)
         }
       }
       //The amount by which we will provably miss the max score by
@@ -1023,7 +1037,7 @@ class HeuristicPlayer private (
       //TODO this has not been tested or tuned much
       //
       //How much of the remaining score are we not getting due to lack of turns
-      val turnsLeftFactor = Math.min(maxPlaysLeft.toDouble, 0.8 * turnsLeft) / maxPlaysLeft.toDouble
+      val turnsLeftFactor = Math.min(maxPlaysLeft.toDouble, 0.8 * turnsWithPossiblePlayLeft) / maxPlaysLeft.toDouble
 
       //TODO currently not good, test again later
       // val discardLimitFactor = {
@@ -1156,8 +1170,8 @@ class HeuristicPlayer private (
       if(debugging(game)) {
         println("PotentHnt: %.2f, GoodKnow: %.2f, Fixup: %.2f, NetHnt: %.2f, HSF: %.3f".format(
           numPotentialHints,goodKnowledge,fixupHintsRequired,netFreeHints,hintScoreFactor))
-        println("TurnsLeft: %d, TLF: %.3f".format(
-          turnsLeft, turnsLeftFactor))
+        println("TurnsWPossPlayLeft: %d, TWPPLF: %.3f".format(
+          turnsWithPossiblePlayLeft, turnsWithPossiblePlayLeft))
         println("DangerCount: %d, DF: %.3f".format(
           dangerCount, dangerFactor))
         println("BombsLeft: %d, BF: %.3f".format(
