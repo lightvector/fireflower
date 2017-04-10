@@ -912,10 +912,8 @@ class HeuristicPlayer private (
           }
         }
         else {
-          //Normally, simply the number of possible playing turns left in the game
-          val base = game.deck.length + rules.numPlayers
-          //TODO But we should subtract off if anyone has provably too many cards to play.
-          base
+          //Simply the number of possible playing turns left in the game
+          game.deck.length + rules.numPlayers
         }
       }
       val maxPlaysLeft = {
@@ -1229,8 +1227,10 @@ class HeuristicPlayer private (
     //doHandleSeenAction returns whether it finds things to be consistent or not.
     val consistent = doHandleSeenAction(sa, gameCopy)
 
-    if(!consistent)
+    if(!consistent) {
+      restoreState(saved)
       Double.NaN
+    }
     else {
       val newCDepth = cDepth+1
       val newRDepth = rDepth-1

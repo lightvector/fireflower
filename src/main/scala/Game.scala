@@ -390,7 +390,7 @@ class Game private (
           case HintNumber(number) => (number+1).toString()
           case UnknownHint => "Unknown"
         }
-        "Hint " + hintString
+        "Hint " + pid + " " + hintString
     }
   }
 }
