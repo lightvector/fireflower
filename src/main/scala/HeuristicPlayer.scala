@@ -433,6 +433,7 @@ class HeuristicPlayer private (
                 case None =>
                   val usefulDiscard = (0 to (numCards-1)).find { pos =>
                     !isBelievedPlayable(revHand(pos),now=false) &&
+                    !isBelievedProtected(revHand(pos)) &&
                     !provablyDangerous(possibles(pos),game) &&
                     !provablyPlayable(possibles(pos),game)
                   }
@@ -1401,10 +1402,12 @@ class HeuristicPlayer private (
         case None => ()
         case Some(hid) =>
           val cid = game.hands(myPid)(hid)
+          val isProtected = isBelievedProtected(cid)
           val possibles = possibleCards(cid,ck=false).map { card =>
             //Weight nonplayable cards ultra-heavily, so that we'll only do this as a last resort.
             //TODO can we decrease the weight?
-            if(!game.isPlayable(card)) (card,100.0)
+            if(isProtected && !game.isPlayable(card) && game.isDangerous(card)) (card,200.0)
+            else if(!game.isPlayable(card)) (card,100.0)
             else (card,1.0)
           }
           val ga = GivePlay(hid)
@@ -1439,8 +1442,14 @@ class HeuristicPlayer private (
             else if(!game.isDangerous(card)) (card,0.7)
             else (card,0.02) //TODO this should depend on hand position
           }
-        case (DISCARD_USEFUL | DISCARD_PLAYABLE | DISCARD_MAYBE_GAMEOVER | DISCARD_GAMEOVER) =>
+        case (DISCARD_USEFUL | DISCARD_PLAYABLE) =>
           possibleCards(cid,ck=false).map { card => (card,1.0) }
+
+        case (DISCARD_MAYBE_GAMEOVER | DISCARD_GAMEOVER) =>
+          possibleCards(cid,ck=false).map { card =>
+            if(!game.isDangerous(card)) (card,1.0)
+            else (card,2.0)
+          }
       }
 
       //Compute the average eval weighted by the weight of each card it could be.
