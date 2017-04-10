@@ -793,7 +793,6 @@ class HeuristicPlayer private (
         if(!visited(cid)) {
           primeBelief(cid) match {
             case None => ()
-            //TODO if a card is provably playable conditional on it being useful, and it's been protected, move it to playable?
             //Filter protected sets down to only cards that could be dangerous
             case Some(b: ProtectedSet) =>
               b.info.cids.foreach { cid => visited(cid) = true }
@@ -1381,12 +1380,6 @@ class HeuristicPlayer private (
       }
     }
 
-
-
-    //TODO allow trying to playing a card without knowing if it's playable if it could be playable
-    //such as at the end of the game when you know it's in your hand but you haven't been hinted
-    //and it's the last turn so you might as well guess.
-
     //Try all play actions
     val playsNow: List[HandId] = expectedPlays(myPid, game, now=true, ck=false)
     playsNow.foreach { hid =>
@@ -1450,7 +1443,6 @@ class HeuristicPlayer private (
           possibleCards(cid,ck=false).map { card => (card,1.0) }
       }
 
-      //TODO we can probably reduce code duplication here
       //Compute the average eval weighted by the weight of each card it could be.
       val ga = GiveDiscard(mld)
       val value = weightedAverage(possiblesAndWeights) { (card,_) =>
@@ -1472,7 +1464,6 @@ class HeuristicPlayer private (
       }
     }
 
-    //TODO currently only hints the next player! No problem in 2p, but in 3p/4p...
     //Try all hint actions
     if(game.numHints > 0) {
       (0 to rules.numPlayers-2).foreach { pidOffset =>
