@@ -1403,21 +1403,24 @@ class HeuristicPlayer private (
     }
 
     //Try playing our first possibly-playable-card
-    //TODO this makes things worse - does the eval actually cause us to want to do this enough for
-    //it to hurt the bot?!?
-    /*
-    firstPossiblyPlayableHid(game,myPid,ck=false) match {
-      case None => ()
-      case Some(hid) =>
-        val cid = game.hands(myPid)(hid)
-        val possibles = possibleCards(cid,ck=false)
-        val ga = GivePlay(hid)
-        val value = weightedAverage(possibles) { card =>
-          tryAction(game, ga, assumingCards=List((cid,card)), cDepth, rDepth, saved)
-        }
-        recordAction(ga,value)
+    if(playsNow.isEmpty) {
+      firstPossiblyPlayableHid(game,myPid,ck=false) match {
+        case None => ()
+        case Some(hid) =>
+          val cid = game.hands(myPid)(hid)
+          val possibles = possibleCards(cid,ck=false).map { card =>
+            //Weight nonplayable cards ultra-heavily, so that we'll only do this as a last resort.
+            //TODO can we decrease the weight?
+            if(!game.isPlayable(card)) (card,100.0)
+            else (card,1.0)
+          }
+          val ga = GivePlay(hid)
+          val value = weightedAverage(possibles) { (card,_) =>
+            tryAction(game, ga, assumingCards=List((cid,card)), cDepth, rDepth, saved)
+          }
+          recordAction(ga,value)
+      }
     }
-     */
 
     //Try our most likely discard action
     if(game.numHints < rules.maxHints) {
