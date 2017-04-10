@@ -22,7 +22,18 @@ import RichImplicits._
 //The shared information between all cards connected in a belief
 sealed trait BeliefInfo
 //The value we track per-card that stays attached to card as it moves in a hand.
-sealed trait Belief
+sealed trait Belief {
+  override def toString(): String = {
+    this match {
+      case PlaySequence(seqIdx,info) =>
+        "PlaySequence(seqIdx=" + seqIdx + ",cids=(" + info.cids.mkString(",") + "))"
+      case ProtectedSet(seqIdx,info) =>
+        "ProtectedSet(seqIdx=" + seqIdx + ",cids=(" + info.cids.mkString(",") + "))"
+      case JunkSet(seqIdx,info) =>
+        "JunkSet(seqIdx=" + seqIdx + ",cids=(" + info.cids.mkString(",") + "))"
+    }
+  }
+}
 
 //A hint was received - this info is meant to track the purely logical info learned.
 case class HintedInfo(sh: SeenHint, hand: Array[CardId])
@@ -40,7 +51,6 @@ case class ProtectedSet(seqIdx: Int, info: ProtectedSetInfo) extends Belief
 //We think these cards can be thrown away
 case class JunkSetInfo(cids: Array[CardId]) extends BeliefInfo
 case class JunkSet(seqIdx: Int, info: JunkSetInfo) extends Belief
-
 
 //Basic constructors and other static functions for the player
 object HeuristicPlayer extends PlayerGen {
@@ -518,39 +528,59 @@ class HeuristicPlayer private (
           if(rules.numPlayers == 2 && postGame.isPlayable(card)) {
             //Find all players that have a copy of that card other than the discarder
             val discardPid = (postGame.curPlayer + (rules.numPlayers - 1)) % rules.numPlayers
-            val hasCard = (0 to (rules.numPlayers - 1)).map { pid =>
+            val hasCardAndNotDiscarder = (0 to (rules.numPlayers - 1)).map { pid =>
               if(pid == discardPid)
                 false
               else
                 postGame.hands(pid).exists { cid => seenMap(cid) == card }
             }.toArray
 
-            val hasCardCount = hasCard.count(x => x == true)
+            val hasCardCount = hasCardAndNotDiscarder.count(x => x == true)
 
-            //If nobody has that card, assume we do, else if there is a unique other person, assume they do.
+            //Which players does the hint signal
             val targetedPids: List[PlayerId] = {
+              //If nobody has that card and it wasn't us giving the hint, it's us.
               if(hasCardCount == 0 && myPid != discardPid) List(myPid)
+              //If nobody has that card and it was us giving that hint, it signals everyone else.
               else if(hasCardCount == 0 && myPid == discardPid) {
                 (0 to rules.numPlayers-1).filter { pid => pid != myPid }.toList
               }
-              else if(hasCardCount == 1) (0 to (rules.numPlayers - 1)).filter { pid => hasCard(pid) }.toList
+              //If exactly one other player than the discarder has the card, it signals them.
+              else if(hasCardCount == 1) (0 to (rules.numPlayers - 1)).filter { pid => hasCardAndNotDiscarder(pid) }.toList
+              //Else signals nobody
               else List()
+            }
+
+            def markPlayable(targetCid: CardId): Unit = {
+              primeBelief(cid) match {
+                //If old card was protected, then the new card is simply thought playable
+                case Some(_: ProtectedSet) =>
+                  addBelief(PlaySequenceInfo(cids = Array(cid)))
+                //If old card was part of a sequence, then the new card is part of that sequence.
+                case Some(PlaySequence(seqIdx,info)) =>
+                  val cids = info.cids.clone
+                  cids(seqIdx) = targetCid
+                  addBelief(PlaySequenceInfo(cids))
+                case _ =>
+                  assert(false)
+              }
             }
 
             targetedPids.foreach { pid =>
               //If there is a positively hinted card that by CK could be the card, mark the first such card as playable if it
               //is not already marked. Else mark the first card that could by CK be it if not already marked.
               val hand = postGame.hands(pid)
+
               hand.find { cid =>
                 hintedMap(cid).exists { hinted => hinted.applied } &&
                 possibleCards(cid,ck=true).contains(card)
               } match {
-                case Some(cid) => addBelief(PlaySequenceInfo(cids = Array(cid)))
+                case Some(cid) => markPlayable(cid)
                 case None =>
                   hand.find { cid =>
                     possibleCards(cid,ck=true).contains(card)
                   } match {
-                    case Some(cid) => addBelief(PlaySequenceInfo(cids = Array(cid)))
+                    case Some(cid) => markPlayable(cid)
                     case None => ()
                   }
               }
@@ -1118,7 +1148,7 @@ class HeuristicPlayer private (
         if(rules.stopEarlyLoss)
           game.numPlayed + maxPlaysLeft * totalFactor
         else
-          game.numPlayed + maxPlaysLeft * totalFactor - 3.0 * lossGap
+          game.numPlayed + maxPlaysLeft * totalFactor - scoreDropPerLostPoint * lossGap
       }
 
       val eval = transformEval(raw)
@@ -1203,6 +1233,13 @@ class HeuristicPlayer private (
         }
       }
       restoreState(saved)
+      if(debugging(gameCopy)) {
+        println("Tried %-10s Assuming %s Eval: %s".format(
+          game.giveActionToString(ga),
+          assumingCards.map({case (_,card) => card.toString(useAnsiColors=true)}).mkString(""),
+          evalToString(eval)
+        ))
+      }
       eval
     }
   }
@@ -1436,6 +1473,22 @@ class HeuristicPlayer private (
     (bestAction,bestActionValue)
   }
 
+  def maybePrintAllBeliefs(game: Game): Unit = {
+    if(debugging(game)) {
+      (0 to rules.numPlayers-1).foreach { pid =>
+        game.hands(pid).foreach { cid =>
+          val card = seenMap(cid)
+          println("P%d Card %s (#%d) Belief %s".format(
+            pid,
+            card.toString(useAnsiColors=true),
+            cid,
+            primeBelief(cid).toString()
+          ))
+        }
+      }
+    }
+  }
+
   //INTERFACE --------------------------------------------------------------------
 
   override def handleGameStart(game: Game): Unit = {
@@ -1448,6 +1501,7 @@ class HeuristicPlayer private (
   }
 
   override def getAction(game: Game): GiveAction = {
+    maybePrintAllBeliefs(game)
     val (action,_eval) = doGetAction(game,cDepth=0,rDepth=2)
     action
   }
