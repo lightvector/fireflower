@@ -125,6 +125,10 @@ class Hand private (
     else None
   }
 
+  def contains(cid: CardId): Boolean = {
+    cards.contains(cid)
+  }
+
   //Makes a copy
   def cardArray(): Array[CardId] = {
     Array.tabulate(numCards) { i => cards(i) }

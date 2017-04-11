@@ -52,6 +52,9 @@ case class ProtectedSet(seqIdx: Int, info: ProtectedSetInfo) extends Belief
 case class JunkSetInfo(cids: Array[CardId]) extends BeliefInfo
 case class JunkSet(seqIdx: Int, info: JunkSetInfo) extends Belief
 
+//One is created every time someone discards, recording the state of the game when they did so.
+case class DiscardSnapshot(pid: PlayerId, postHands: Array[Hand], postHints: Int, nextPlayable: Array[Number])
+
 //Basic constructors and other static functions for the player
 object HeuristicPlayer extends PlayerGen {
 
@@ -72,7 +75,8 @@ object HeuristicPlayer extends PlayerGen {
       seenMap = SeenMap.empty(rules),
       seenMapCK = SeenMap.empty(rules),
       hintedMap = CardPropertyMap(rules),
-      beliefMap = CardPropertyMap(rules)
+      beliefMap = CardPropertyMap(rules),
+      discardSnapshots = List()
     )
   }
 
@@ -88,7 +92,8 @@ case class SavedState(
   val seenMap: SeenMap,
   val seenMapCK: SeenMap,
   val hintedMap: CardPropertyMap[Hinted],
-  val beliefMap: CardPropertyMap[Belief]
+  val beliefMap: CardPropertyMap[Belief],
+  val discardSnapshots: List[DiscardSnapshot]
 )
 
 class HeuristicPlayer private (
@@ -115,8 +120,9 @@ class HeuristicPlayer private (
   //Beliefs we have about cards based on conventions.
   //In general, it's important that this map doesn't contain things that can be inferred only based on
   //private information because it's used to predict other players' actions.
-  val beliefMap: CardPropertyMap[Belief]
-
+  val beliefMap: CardPropertyMap[Belief],
+  //Snapshots of past states of the game when people discarded.
+  var discardSnapshots: List[DiscardSnapshot]
 ) extends Player {
 
   def saveState(): SavedState = {
@@ -124,7 +130,8 @@ class HeuristicPlayer private (
       seenMap = SeenMap(seenMap),
       seenMapCK = SeenMap(seenMapCK),
       hintedMap = CardPropertyMap(hintedMap),
-      beliefMap = CardPropertyMap(beliefMap)
+      beliefMap = CardPropertyMap(beliefMap),
+      discardSnapshots = discardSnapshots
     )
   }
   def restoreState(saved: SavedState): Unit = {
@@ -132,6 +139,7 @@ class HeuristicPlayer private (
     saved.seenMapCK.copyTo(seenMapCK)
     saved.hintedMap.copyTo(hintedMap)
     saved.beliefMap.copyTo(beliefMap)
+    discardSnapshots = saved.discardSnapshots
   }
 
   //Checks whether the current game state is one where we should be printing debug messages.
@@ -514,6 +522,17 @@ class HeuristicPlayer private (
   def handleSeenDiscard(sd: SeenDiscard, postGame: Game): Unit = {
     val cid = sd.cid
     val card = seenMap(cid)
+    val discardPid = (postGame.curPlayer + (rules.numPlayers - 1)) % rules.numPlayers
+    //Make a new snapshot
+    val newDiscardSnapshot = {
+      DiscardSnapshot(
+        pid = discardPid,
+        postHands = postGame.hands.map { hand => Hand(hand) },
+        postHints = postGame.numHints,
+        nextPlayable = postGame.nextPlayable.clone()
+      )
+    }
+    discardSnapshots = newDiscardSnapshot :: discardSnapshots
 
     //Check and update beliefs based on the discard if the discard turned out to not actually be junk
     if(card != Card.NULL && !postGame.isJunk(card)) {
@@ -528,7 +547,6 @@ class HeuristicPlayer private (
           //If the card was playable right now, then it's a hint about a playable duplicate of that card.
           if(rules.numPlayers == 2 && postGame.isPlayable(card)) {
             //Find all players that have a copy of that card other than the discarder
-            val discardPid = (postGame.curPlayer + (rules.numPlayers - 1)) % rules.numPlayers
             val hasCardAndNotDiscarder = (0 to (rules.numPlayers - 1)).map { pid =>
               if(pid == discardPid)
                 false
@@ -708,7 +726,23 @@ class HeuristicPlayer private (
             colors.forall { color => postGame.nextPlayable(color.id) >= num }
           case HintColor(color) =>
             //Affects the first card and cards other than the first are already protected.
-            sh.appliedTo(0) && (1 to (hand.length - 1)).forall { hid => isBelievedProtected(hand(hid)) }
+            //OR newest card is new and there are no dangers yet in that color
+            sh.appliedTo(0) && (1 to (hand.length - 1)).forall { hid => isBelievedProtected(hand(hid)) } ||
+            {
+              val firstHid = sh.appliedTo.indexWhere(b => b)
+              val firstCid = hand(firstHid)
+              //Test if "new" - find the first snapshot with at least 3 hints after, and if it fails to contain the card,
+              //then the card "never clearly had a chance to be hinted yet".
+              val ds = discardSnapshots.find { ds => ds.postHints >= 3 }
+              ds.forall { ds => !ds.postHands(pid).contains(firstCid) } &&
+              //No dangers yet - all possiblities for all cards in hint either have numCardsInitial = 1 or are not dangerous
+              //or are completely known
+              hintCids.forall { cid =>
+                val possibles = possibleCards(cid,ck=true)
+                possibles.length == 1 ||
+                possibles.forall { card => numCardsInitial(card.arrayIdx) <= 1 || !postGame.isDangerous(card) }
+              }
+            }
           case _ => false
         }
       }
