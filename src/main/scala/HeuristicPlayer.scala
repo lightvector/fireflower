@@ -1105,16 +1105,17 @@ class HeuristicPlayer private (
       //and not merely dangerousness?
 
       //How much of the remaining score are we not getting due to danger stuff
-      val dangerCount = distinctCards.foldLeft(0) { case (acc,card) =>
+      val dangerCount = distinctCards.foldLeft(0.0) { case (acc,card) =>
+        val gap: Double = (rules.maxNumber - card.number).toDouble
         if(card.number >= game.nextPlayable(card.color.id) &&
           game.isDangerous(card) &&
           seenMap.numUnseenByCard(card.arrayIdx) == 1)
-          acc + (rules.maxNumber - card.number)
+          acc + (gap + 0.1 * gap * gap)
         else if(card.number >= game.nextPlayable(card.color.id) &&
           numCardsInitial(card.arrayIdx) > 2 &&
           game.numCardRemaining(card.arrayIdx) == 2 &&
           seenMap.numUnseenByCard(card.arrayIdx) == 2)
-          acc + (rules.maxNumber - card.number) / 2
+          acc + (gap + 0.1 * gap * gap) * 0.6
         else
           acc
       }
