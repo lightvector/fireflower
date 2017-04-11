@@ -1147,6 +1147,34 @@ class HeuristicPlayer private (
         else 0.0
       }
 
+      //NEXT TURN -------------------------------------------------------------------------------------
+      //Penalize if the player next to move is possibly about to just lose the game.
+      val nextTurnLossFactor = {
+        val pid = game.curPlayer
+        //Minor optimization - we never know if we're about to lose the game by our own discard
+        //Or if discarding is not possible.
+        //TODO restricting to < 1 hint right now because if we do more, then the bot wrongly evals many actions
+        //because likelyActionsSimple isn't great and often allows us to end up in this kind of situation when in reality
+        //that next player would prevent this. Restricting to low hints limits to cases where this is less likely to miseval.
+        if(pid == myPid || game.numHints >= rules.maxHints || game.numDiscarded >= rules.maxDiscards || game.numHints > 1)
+          1.0
+        else {
+          val (hid,dg) = mostLikelyDiscard(pid, game, ck=true)
+          val cid = game.hands(pid)(hid)
+          val aboutToLose = {
+            !isBelievedProtected(cid) &&
+            provablyDangerous(possibleCards(cid,ck=false),game) &&
+            dg >= DISCARD_REGULAR &&
+            expectedPlays(pid, game, now=true, ck=false).isEmpty
+          }
+          if(!aboutToLose) 1.0
+          else {
+            if(game.numHints <= 0) 0.85
+            else 0.90
+          }
+        }
+      }
+
       //PUT IT ALL TOGETHER -----------------------------------------------------------------------------------------
 
       val totalFactor = {
@@ -1154,7 +1182,8 @@ class HeuristicPlayer private (
         turnsLeftFactor *
         hintScoreFactor *
         bombsFactor *
-        handClogFactor
+        handClogFactor *
+        nextTurnLossFactor
       }
       val raw = {
         if(rules.stopEarlyLoss)
@@ -1176,6 +1205,8 @@ class HeuristicPlayer private (
           bombsLeft, bombsFactor))
         println("HandClogF: %.3f".format(
           handClogFactor))
+        println("NextTurnLossF: %.3f".format(
+          nextTurnLossFactor))
         println("PlaysLeft: %d, LossGap %d, TotalFactor: %.3f".format(
           maxPlaysLeft, lossGap, totalFactor))
         println("Eval: %s".format(

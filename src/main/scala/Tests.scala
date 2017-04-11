@@ -158,26 +158,26 @@ object PlayerTests {
    [info] Score  5  Games: 14  Percent:  1.4%  Cum: 96.1%
    [info] Score  6  Games: 18  Percent:  1.8%  Cum: 94.7%
    [info] Score  7  Games: 18  Percent:  1.8%  Cum: 92.9%
-   [info] Score  8  Games: 16  Percent:  1.6%  Cum: 91.1%
-   [info] Score  9  Games: 22  Percent:  2.2%  Cum: 89.5%
-   [info] Score 10  Games: 24  Percent:  2.4%  Cum: 87.3%
-   [info] Score 11  Games: 28  Percent:  2.8%  Cum: 84.9%
-   [info] Score 12  Games: 19  Percent:  1.9%  Cum: 82.1%
-   [info] Score 13  Games: 19  Percent:  1.9%  Cum: 80.2%
-   [info] Score 14  Games: 24  Percent:  2.4%  Cum: 78.3%
-   [info] Score 15  Games: 23  Percent:  2.3%  Cum: 75.9%
-   [info] Score 16  Games: 31  Percent:  3.1%  Cum: 73.6%
-   [info] Score 17  Games: 29  Percent:  2.9%  Cum: 70.5%
-   [info] Score 18  Games: 38  Percent:  3.8%  Cum: 67.6%
-   [info] Score 19  Games: 33  Percent:  3.3%  Cum: 63.8%
-   [info] Score 20  Games: 31  Percent:  3.1%  Cum: 60.5%
-   [info] Score 21  Games: 39  Percent:  3.9%  Cum: 57.4%
-   [info] Score 22  Games: 69  Percent:  6.9%  Cum: 53.5%
-   [info] Score 23  Games: 72  Percent:  7.2%  Cum: 46.6%
-   [info] Score 24  Games: 205  Percent: 20.5%  Cum: 39.4%
+   [info] Score  8  Games: 15  Percent:  1.5%  Cum: 91.1%
+   [info] Score  9  Games: 21  Percent:  2.1%  Cum: 89.6%
+   [info] Score 10  Games: 26  Percent:  2.6%  Cum: 87.5%
+   [info] Score 11  Games: 27  Percent:  2.7%  Cum: 84.9%
+   [info] Score 12  Games: 13  Percent:  1.3%  Cum: 82.2%
+   [info] Score 13  Games: 16  Percent:  1.6%  Cum: 80.9%
+   [info] Score 14  Games: 22  Percent:  2.2%  Cum: 79.3%
+   [info] Score 15  Games: 23  Percent:  2.3%  Cum: 77.1%
+   [info] Score 16  Games: 31  Percent:  3.1%  Cum: 74.8%
+   [info] Score 17  Games: 30  Percent:  3.0%  Cum: 71.7%
+   [info] Score 18  Games: 39  Percent:  3.9%  Cum: 68.7%
+   [info] Score 19  Games: 32  Percent:  3.2%  Cum: 64.8%
+   [info] Score 20  Games: 31  Percent:  3.1%  Cum: 61.6%
+   [info] Score 21  Games: 38  Percent:  3.8%  Cum: 58.5%
+   [info] Score 22  Games: 70  Percent:  7.0%  Cum: 54.7%
+   [info] Score 23  Games: 74  Percent:  7.4%  Cum: 47.7%
+   [info] Score 24  Games: 214  Percent: 21.4%  Cum: 40.3%
    [info] Score 25  Games: 189  Percent: 18.9%  Cum: 18.9%
-   [info] Average Score: 18.997
-   [info] Average Utility: 47.444
+   [info] Average Score: 19.129
+   [info] Average Utility: 47.708
    [info]
    [info] HeuristicStandard4P:
    [info] Score  0  Games:  3  Percent:  0.3%  Cum: 100.0%
@@ -186,30 +186,30 @@ object PlayerTests {
    [info] Score  3  Games:  7  Percent:  0.7%  Cum: 98.3%
    [info] Score  4  Games:  6  Percent:  0.6%  Cum: 97.6%
    [info] Score  5  Games: 15  Percent:  1.5%  Cum: 97.0%
-   [info] Score  6  Games: 10  Percent:  1.0%  Cum: 95.5%
-   [info] Score  7  Games: 20  Percent:  2.0%  Cum: 94.5%
-   [info] Score  8  Games: 18  Percent:  1.8%  Cum: 92.5%
-   [info] Score  9  Games: 15  Percent:  1.5%  Cum: 90.7%
-   [info] Score 10  Games: 21  Percent:  2.1%  Cum: 89.2%
-   [info] Score 11  Games: 28  Percent:  2.8%  Cum: 87.1%
-   [info] Score 12  Games: 26  Percent:  2.6%  Cum: 84.3%
-   [info] Score 13  Games: 42  Percent:  4.2%  Cum: 81.7%
-   [info] Score 14  Games: 40  Percent:  4.0%  Cum: 77.5%
-   [info] Score 15  Games: 39  Percent:  3.9%  Cum: 73.5%
-   [info] Score 16  Games: 39  Percent:  3.9%  Cum: 69.6%
-   [info] Score 17  Games: 45  Percent:  4.5%  Cum: 65.7%
-   [info] Score 18  Games: 57  Percent:  5.7%  Cum: 61.2%
-   [info] Score 19  Games: 62  Percent:  6.2%  Cum: 55.5%
-   [info] Score 20  Games: 48  Percent:  4.8%  Cum: 49.3%
-   [info] Score 21  Games: 50  Percent:  5.0%  Cum: 44.5%
-   [info] Score 22  Games: 82  Percent:  8.2%  Cum: 39.5%
-   [info] Score 23  Games: 106  Percent: 10.6%  Cum: 31.3%
-   [info] Score 24  Games: 152  Percent: 15.2%  Cum: 20.7%
+   [info] Score  6  Games:  9  Percent:  0.9%  Cum: 95.5%
+   [info] Score  7  Games: 19  Percent:  1.9%  Cum: 94.6%
+   [info] Score  8  Games: 17  Percent:  1.7%  Cum: 92.7%
+   [info] Score  9  Games: 16  Percent:  1.6%  Cum: 91.0%
+   [info] Score 10  Games: 21  Percent:  2.1%  Cum: 89.4%
+   [info] Score 11  Games: 26  Percent:  2.6%  Cum: 87.3%
+   [info] Score 12  Games: 28  Percent:  2.8%  Cum: 84.7%
+   [info] Score 13  Games: 41  Percent:  4.1%  Cum: 81.9%
+   [info] Score 14  Games: 36  Percent:  3.6%  Cum: 77.8%
+   [info] Score 15  Games: 36  Percent:  3.6%  Cum: 74.2%
+   [info] Score 16  Games: 38  Percent:  3.8%  Cum: 70.6%
+   [info] Score 17  Games: 46  Percent:  4.6%  Cum: 66.8%
+   [info] Score 18  Games: 58  Percent:  5.8%  Cum: 62.2%
+   [info] Score 19  Games: 59  Percent:  5.9%  Cum: 56.4%
+   [info] Score 20  Games: 51  Percent:  5.1%  Cum: 50.5%
+   [info] Score 21  Games: 52  Percent:  5.2%  Cum: 45.4%
+   [info] Score 22  Games: 89  Percent:  8.9%  Cum: 40.2%
+   [info] Score 23  Games: 109  Percent: 10.9%  Cum: 31.3%
+   [info] Score 24  Games: 149  Percent: 14.9%  Cum: 20.4%
    [info] Score 25  Games: 55  Percent:  5.5%  Cum:  5.5%
-   [info] Average Score: 18.011
-   [info] Average Utility: 38.772
+   [info] Average Score: 18.102
+   [info] Average Utility: 38.954
    [info]
-   [info] Time: 983.627438999
+   [info] Time: 1010.286145416
 
    */
 
