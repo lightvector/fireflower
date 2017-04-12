@@ -1378,9 +1378,9 @@ class HeuristicPlayer private (
     updateSeenMap(game.hiddenFor(pid))
     val actions = {
       val playsNow: List[HandId] = expectedPlays(pid, game, now=true, ck=false)
-      //Play if possible
+      //Play if possible, randomly among all of them
       if(playsNow.nonEmpty)
-        List((GivePlay(playsNow.head),1.0))
+        playsNow.map { hid => (GivePlay(hid),1.0) }
       //Give a hint if at max hints //TODO improve this for the last round
       else if(game.numHints >= rules.maxHints)
         List((GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),1.0))
