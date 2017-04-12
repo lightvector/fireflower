@@ -706,24 +706,24 @@ class HeuristicPlayer private (
           !preExpectedPlaysNow.exists { hid => cid == hand(hid) } //not possible play before
         }
       } && {
-        //All cards in hint are either provably junk, possibly playable, or completely known
-        hintCids.forall { cid =>
-          val possibles = possibleCards(cid,ck=true)
-          !provablyNotPlayable(possibles,postGame) ||
-          provablyJunk(possibles,postGame) ||
-          possibles.length == 1
-        }
-      } && {
         sh.hint match {
           case HintNumber(num) =>
-            //The number of cards possibly playable is >= the number of cards of this number that are useful.
-            //OR all color piles are >= that number
-            val numPossiblyPlayable = hintCids.count { cid =>
+            //All cards in hint are either provably junk, possibly playable, or completely known
+            hintCids.forall { cid =>
               val possibles = possibleCards(cid,ck=true)
-              !provablyNotPlayable(possibles,postGame)
+              !provablyNotPlayable(possibles,postGame) ||
+              provablyJunk(possibles,postGame) ||
+              possibles.length == 1
+            } && {
+              //The number of cards possibly playable is >= the number of cards of this number that are useful.
+              //OR all color piles are >= that number
+              val numPossiblyPlayable = hintCids.count { cid =>
+                val possibles = possibleCards(cid,ck=true)
+                !provablyNotPlayable(possibles,postGame)
+              }
+              numPossiblyPlayable > colors.count { color => postGame.nextPlayable(color.id) <= num } ||
+              colors.forall { color => postGame.nextPlayable(color.id) >= num }
             }
-            numPossiblyPlayable > colors.count { color => postGame.nextPlayable(color.id) <= num } ||
-            colors.forall { color => postGame.nextPlayable(color.id) >= num }
           case HintColor(color) =>
             //Affects the first card and cards other than the first are already protected.
             //OR newest card is new and there are no dangers yet in that color
@@ -736,11 +736,11 @@ class HeuristicPlayer private (
               val ds = discardSnapshots.find { ds => ds.postHints >= 3 }
               ds.forall { ds => !ds.postHands(pid).contains(firstCid) } &&
               //No dangers yet - all possiblities for all cards in hint either have numCardsInitial = 1 or are not dangerous
-              //or are completely known
+              //or are completely known or are playable.
               hintCids.forall { cid =>
                 val possibles = possibleCards(cid,ck=true)
                 possibles.length == 1 ||
-                possibles.forall { card => numCardsInitial(card.arrayIdx) <= 1 || !postGame.isDangerous(card) }
+                possibles.forall { card => numCardsInitial(card.arrayIdx) <= 1 || !postGame.isDangerous(card) || postGame.isPlayable(card) }
               }
             }
           case _ => false
