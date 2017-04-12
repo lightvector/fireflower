@@ -1233,8 +1233,8 @@ class HeuristicPlayer private (
         println("PotentHnt: %.2f, GoodKnow: %.2f, Fixup: %.2f, NetHnt: %.2f, HSF: %.3f".format(
           numPotentialHints,goodKnowledge,fixupHintsRequired,netFreeHints,hintScoreFactor))
         println("TurnsWPossPlayLeft: %d, TWPPLF: %.3f".format(
-          turnsWithPossiblePlayLeft, turnsWithPossiblePlayLeft))
-        println("DangerCount: %d, DF: %.3f".format(
+          turnsWithPossiblePlayLeft, turnsLeftFactor))
+        println("DangerCount: %.3f, DF: %.3f".format(
           dangerCount, dangerFactor))
         println("BombsLeft: %d, BF: %.3f".format(
           bombsLeft, bombsFactor))
