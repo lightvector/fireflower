@@ -413,8 +413,11 @@ class HeuristicPlayer private (
 
   //Check if there was no moment where this card was in a hand when someone discarded resulting
   //in at least minPostHints hints left.
+  //Pid should be the player who holds the card.
   def cardIsNew(pid: PlayerId, cid: CardId, minPostHints: Int) = {
-    val ds = discardSnapshots.find { ds => ds.postHints >= 3 }
+    //Find the most recent instance where someone other than the player who holds the card
+    //discarded with many hints left
+    val ds = discardSnapshots.find { ds => ds.postHints >= 3 && ds.pid != pid }
     ds.forall { ds => !ds.postHands(pid).contains(cid) }
   }
 
@@ -681,8 +684,8 @@ class HeuristicPlayer private (
   def handleSeenHint(sh: SeenHint, postGame: Game): Unit = {
     updateSeenMap(postGame)
 
-    val pid = sh.pid
-    val hand = postGame.hands(pid)
+    val pid = sh.pid //Player who was hinted
+    val hand = postGame.hands(pid) //Hand of player who was hinted
     val hintCids = (0 to (hand.numCards-1)).flatMap { hid =>
       if(sh.appliedTo(hid)) Some(hand(hid))
       else None
@@ -1063,7 +1066,6 @@ class HeuristicPlayer private (
               //provably (ck=true) dangerous, or perhaps just whether the card is known exactly
               else if(isBelievedProtected(cid) && (card != Card.NULL && game.isDangerous(card)))
                 0.2
-              //TODO try this
               else if(isBelievedProtected(cid) && (card != Card.NULL && game.isPlayable(card)))
                 0.1
               //TODO try stuff like this
