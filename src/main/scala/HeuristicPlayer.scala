@@ -526,10 +526,19 @@ class HeuristicPlayer private (
 
   //Handle a discard that we've seen, updating info and beliefmaps.
   //Assumes seenMap is already updated, but nothing else.
-  def handleSeenDiscard(sd: SeenDiscard, postGame: Game): Unit = {
+  def handleSeenDiscard(sd: SeenDiscard, preGame: Game, postGame: Game): Unit = {
     val cid = sd.cid
+    val discardPid = preGame.curPlayer
+    val preExpectedPlaysNow: List[HandId] = expectedPlays(discardPid,preGame,now=true,ck=true)
+    val prePossibles = possibleCards(cid,ck=true)
+
+    updateSeenMap(postGame)
+
     val card = seenMap(cid)
-    val discardPid = (postGame.curPlayer + (rules.numPlayers - 1)) % rules.numPlayers
+
+    //TODO if there are sufficiently many hints left and a player discards, they must not believe they have playable cards,
+    //so update those beliefs.
+
     //Make a new snapshot
     val newDiscardSnapshot = {
       DiscardSnapshot(
@@ -541,80 +550,77 @@ class HeuristicPlayer private (
     }
     discardSnapshots = newDiscardSnapshot :: discardSnapshots
 
-    //Check and update beliefs based on the discard if the discard turned out to not actually be junk
-    if(card != Card.NULL && !postGame.isJunk(card)) {
-      primeBelief(cid) match {
-        //No prior belief
-        case None => ()
-        //Card was protected or was a believed play
-        case Some(_: ProtectedSet) | Some(_: PlaySequence) =>
-          //TODO also check that it was NOT the most likely discard?
-          //TODO this massively hurts playing strength on 3 and 4 player. Why? A bug? For now we hack to 2-player only
+    //Discard finesse based on if the discard if the discard was of an expected play
+    if(card != Card.NULL && preExpectedPlaysNow.contains(sd.hid)) {
+      //TODO maybe also check that it was NOT the most likely discard?
+      //TODO this massively hurts playing strength on 3 and 4 player. Why? A bug? For now we hack to 2-player only
+      if(rules.numPlayers == 2) {
+        //It's a hint about a playable duplicate of what that player believed that card could be.
+        val prePossiblesPlayable = prePossibles.filter { card => postGame.isPlayable(card) }
+        if(prePossiblesPlayable.nonEmpty) {
 
-          //If the card was playable right now, then it's a hint about a playable duplicate of that card.
-          if(rules.numPlayers == 2 && postGame.isPlayable(card)) {
-            //Find all players that have a copy of that card other than the discarder
-            val hasCardAndNotDiscarder = (0 to (rules.numPlayers - 1)).map { pid =>
-              if(pid == discardPid)
-                false
-              else
-                postGame.hands(pid).exists { cid => seenMap(cid) == card }
-            }.toArray
+          //Find all players that have a copy of that card other than the discarder
+          val hasCardAndNotDiscarder = (0 to (rules.numPlayers - 1)).map { pid =>
+            if(pid == discardPid) false
+            else postGame.hands(pid).exists { cid => prePossiblesPlayable.contains(seenMap(cid)) }
+          }.toArray
 
-            val hasCardCount = hasCardAndNotDiscarder.count(x => x == true)
+          val hasCardCount = hasCardAndNotDiscarder.count(x => x == true)
 
-            //Which players does the hint signal
-            val targetedPids: List[PlayerId] = {
-              //If nobody has that card and it wasn't us giving the hint, it's us.
-              if(hasCardCount == 0 && myPid != discardPid) List(myPid)
-              //If nobody has that card and it was us giving that hint, it signals everyone else.
-              else if(hasCardCount == 0 && myPid == discardPid) {
-                (0 to rules.numPlayers-1).filter { pid => pid != myPid }.toList
-              }
-              //If exactly one other player than the discarder has the card, it signals them.
-              else if(hasCardCount == 1) (0 to (rules.numPlayers - 1)).filter { pid => hasCardAndNotDiscarder(pid) }.toList
-              //Else signals nobody
-              else List()
+          //Which players does the hint signal
+          val targetedPids: List[PlayerId] = {
+            //If nobody has that card and it wasn't us giving the hint, it's us.
+            if(hasCardCount == 0 && myPid != discardPid) List(myPid)
+            //If nobody has that card and it was us giving that hint, it signals everyone else.
+            else if(hasCardCount == 0 && myPid == discardPid) {
+              (0 to rules.numPlayers-1).filter { pid => pid != myPid }.toList
             }
-
-            def markPlayable(targetCid: CardId): Unit = {
-              primeBelief(cid) match {
-                //If old card was protected, then the new card is simply thought playable
-                case Some(_: ProtectedSet) =>
-                  addBelief(PlaySequenceInfo(cids = Array(cid)))
-                //If old card was part of a sequence, then the new card is part of that sequence.
-                case Some(PlaySequence(seqIdx,info)) =>
-                  val cids = info.cids.clone
-                  cids(seqIdx) = targetCid
-                  addBelief(PlaySequenceInfo(cids))
-                case _ =>
-                  assert(false)
-              }
-            }
-
-            targetedPids.foreach { pid =>
-              //If there is a positively hinted card that by CK could be the card, mark the first such card as playable if it
-              //is not already marked. Else mark the first card that could by CK be it if not already marked.
-              val hand = postGame.hands(pid)
-
-              hand.find { cid =>
-                hintedMap(cid).exists { hinted => hinted.applied } &&
-                possibleCards(cid,ck=true).contains(card)
-              } match {
-                case Some(cid) => markPlayable(cid)
-                case None =>
-                  hand.find { cid =>
-                    possibleCards(cid,ck=true).contains(card)
-                  } match {
-                    case Some(cid) => markPlayable(cid)
-                    case None => ()
-                  }
-              }
-            }
-
+            //If exactly one other player than the discarder has the card, it signals them.
+            else if(hasCardCount == 1) (0 to (rules.numPlayers - 1)).filter { pid => hasCardAndNotDiscarder(pid) }.toList
+            //Else signals nobody
+            else List()
           }
 
-        //Card was believed junk
+          def markPlayable(targetCid: CardId): Unit = {
+            primeBelief(cid) match {
+              //If old card was part of a sequence, then the new card is part of that sequence.
+              case Some(PlaySequence(seqIdx,info)) =>
+                val cids = info.cids.clone
+                cids(seqIdx) = targetCid
+                addBelief(PlaySequenceInfo(cids))
+              //Otherwise the new card is simply thought playable
+              case _ =>
+                addBelief(PlaySequenceInfo(cids = Array(cid)))
+            }
+          }
+
+          targetedPids.foreach { pid =>
+            //If there is a positively hinted card that by CK could be the card, mark the first such card as playable if it
+            //is not already marked. Else mark the first card that could by CK be it if not already marked.
+            val hand = postGame.hands(pid)
+
+            hand.find { cid =>
+              hintedMap(cid).exists { hinted => hinted.applied } &&
+              possibleCards(cid,ck=true).exists { c => prePossiblesPlayable.contains(c) }
+            } match {
+              case Some(cid) => markPlayable(cid)
+              case None =>
+                hand.find { cid =>
+                  possibleCards(cid,ck=true).exists { c => prePossiblesPlayable.contains(c) }
+                } match {
+                  case Some(cid) => markPlayable(cid)
+                  case None => ()
+                }
+            }
+          }
+        }
+      }
+    }
+    //Changing mind abound junk sets
+    else if(card != Card.NULL && !postGame.isJunk(card)) {
+      primeBelief(cid) match {
+        case None => ()
+        case Some(_: ProtectedSet) | Some(_: PlaySequence) => ()
         case Some(b: JunkSet) =>
           //If the card was not actually junk, then immediately change everything in the believed junk set
           //to protected so we don't keep discarding them.
@@ -627,6 +633,8 @@ class HeuristicPlayer private (
   //Assumes seenMap is already updated, but nothing else.
   def handleSeenPlay(sp: SeenPlay, postGame: Game): Unit = {
     val cid = sp.cid
+    updateSeenMap(postGame)
+
     //Successful play
     primeBelief(cid) match {
       //No prior belief
@@ -643,6 +651,8 @@ class HeuristicPlayer private (
 
   def handleSeenBomb(sb: SeenBomb, postGame: Game): Unit = {
     val cid = sb.cid
+    updateSeenMap(postGame)
+
     primeBelief(cid) match {
       //No prior belief
       case None => ()
@@ -669,6 +679,8 @@ class HeuristicPlayer private (
   //Handle a hint that we've seen, updating info and beliefmaps.
   //Assumes seenMap is already updated, but nothing else.
   def handleSeenHint(sh: SeenHint, postGame: Game): Unit = {
+    updateSeenMap(postGame)
+
     val pid = sh.pid
     val hand = postGame.hands(pid)
     val hintCids = (0 to (hand.numCards-1)).flatMap { hid =>
@@ -1275,11 +1287,10 @@ class HeuristicPlayer private (
 
 
   //Update player for a given action. Return true if game still appears consistent, false otherwise.
-  def doHandleSeenAction(sa: SeenAction, postGame: Game): Boolean = {
-    updateSeenMap(postGame)
+  def doHandleSeenAction(sa: SeenAction, preGame: Game, postGame: Game): Boolean = {
     sa match {
       case (sd: SeenDiscard) =>
-        handleSeenDiscard(sd,postGame)
+        handleSeenDiscard(sd,preGame,postGame)
       case (sp: SeenPlay) =>
         handleSeenPlay(sp,postGame)
       case (sb: SeenBomb) =>
@@ -1307,7 +1318,7 @@ class HeuristicPlayer private (
     //We need to check consistency in case the act of doing the action makes a higher-order deduction clear that we hadn't deduced
     //before that the position is actually impossible, since our logical inferencing isn't 100% complete.
     //doHandleSeenAction returns whether it finds things to be consistent or not.
-    val consistent = doHandleSeenAction(sa, gameCopy)
+    val consistent = doHandleSeenAction(sa, game, gameCopy)
 
     if(!consistent) {
       restoreState(saved)
@@ -1594,8 +1605,8 @@ class HeuristicPlayer private (
     doHandleGameStart(game)
   }
 
-  override def handleSeenAction(sa: SeenAction, postGame: Game): Unit = {
-    val consistent = doHandleSeenAction(sa,postGame)
+  override def handleSeenAction(sa: SeenAction, preGame: Game, postGame: Game): Unit = {
+    val consistent = doHandleSeenAction(sa,preGame,postGame)
     assert(consistent)
   }
 

@@ -38,12 +38,13 @@ object Sim {
         throw new Exception("Illegal action: " + game.giveActionToString(ga))
       }
       else {
+        val preGame = Game(game)
         val sa = game.seenAction(ga)
         if(doPrint)
           println(game.toString(useAnsiColors) + "  " + game.seenActionToString(sa,useAnsiColors))
         game.doAction(ga)
         for(pid <- 0 to (players.length - 1)) {
-          players(pid).handleSeenAction(sa, game.hiddenFor(pid))
+          players(pid).handleSeenAction(sa, preGame.hiddenFor(pid), game.hiddenFor(pid))
         }
       }
     }

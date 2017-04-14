@@ -39,6 +39,7 @@ object Interactive {
 
     var pid = 0
     while(!game.isDone()) {
+      val preGame = Game(game)
       if(pid == myPid) {
         val ga = player.getAction(Game(game))
         ga match {
@@ -48,14 +49,14 @@ object Interactive {
             game.seenMap(game.hands(pid)(hid)) = card
             val sa = game.seenAction(ga)
             game.doAction(ga)
-            player.handleSeenAction(sa, Game(game))
+            player.handleSeenAction(sa, preGame, Game(game))
           case GivePlay(hid) =>
             println("Play #" + (hid+1))
             val card = inputCard("Play was a")
             game.seenMap(game.hands(pid)(hid)) = card
             val sa = game.seenAction(ga)
             game.doAction(ga)
-            player.handleSeenAction(sa, Game(game))
+            player.handleSeenAction(sa, preGame, Game(game))
           case GiveHint(pid,hint) =>
             val sa = game.seenAction(ga) match {
               case (_: SeenDiscard) => assertUnreachable()
@@ -64,7 +65,7 @@ object Interactive {
               case (x: SeenHint) => x
             }
             game.doAction(ga)
-            player.handleSeenAction(sa, Game(game))
+            player.handleSeenAction(sa, preGame, Game(game))
 
             val appliedTo = sa.appliedTo.zipWithIndex.flatMap { case (b,hid) =>
               if(b) Some(hid.toString) else None
@@ -102,7 +103,7 @@ object Interactive {
           val card = inputCard("Drawn card was")
           game.seenMap(game.hands(pid)(0)) = card
         }
-        player.handleSeenAction(sa, Game(game))
+        player.handleSeenAction(sa, preGame, Game(game))
       }
       pid = (pid+1) % rules.numPlayers
     }

@@ -53,7 +53,7 @@ class RandomPlayer(val seed: Long, val myPid: Int, val rules: Rules) extends Pla
   val possibleHintTypes: Array[GiveHintType] = rules.possibleHintTypes()
 
   override def handleGameStart(game: Game): Unit = {}
-  override def handleSeenAction(sa: SeenAction, postGame: Game): Unit = {}
+  override def handleSeenAction(sa: SeenAction, preGame: Game, postGame: Game): Unit = {}
 
   override def getAction(game: Game): GiveAction = {
     rand.nextInt(5) match {
