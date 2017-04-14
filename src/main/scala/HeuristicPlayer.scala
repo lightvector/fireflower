@@ -1083,7 +1083,7 @@ class HeuristicPlayer private (
 
       //All of the hint-related factors combined, and adjusted.
       val netFreeHints =
-        numPotentialHints * 0.9 + goodKnowledge - (fixupHintsRequired + maxPlaysLeft) - 4
+        numPotentialHints * 0.85 + goodKnowledge - (fixupHintsRequired + maxPlaysLeft) - 4
       //How much of the remaining score are we not getting due to lack of hints
       val hintScoreFactor = {
         val hintScoreFactorRaw = (maxPlaysLeft.toDouble + 3.0 - softPlus(-netFreeHints,2.5)) / (maxPlaysLeft + 3.0)
