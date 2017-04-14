@@ -1535,7 +1535,7 @@ class HeuristicPlayer private (
             if(game.isJunk(card)) (card,1.0)
             else if(!game.isDangerous(card)) (card,0.7)
             //Opponent is not expecting us to discard if we have a play available
-            else if(ckPlaysNow.nonEmpty) (card,0.2)
+            else if(ckPlaysNow.nonEmpty) (card,0.5)
             else (card,0.02) //TODO this should depend on hand position
           }
         case (DISCARD_USEFUL | DISCARD_PLAYABLE) =>
