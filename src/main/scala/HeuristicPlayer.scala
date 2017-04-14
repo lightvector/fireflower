@@ -1475,6 +1475,7 @@ class HeuristicPlayer private (
     }
 
     //Try all play actions
+    val ckPlaysNow: List[HandId] = expectedPlays(myPid, game, now=true, ck=true)
     val playsNow: List[HandId] = expectedPlays(myPid, game, now=true, ck=false)
     playsNow.foreach { hid =>
       //Right now, we only play cards we think are probably playable, so get all the possibilities
@@ -1533,6 +1534,8 @@ class HeuristicPlayer private (
           possibleCards(cid,ck=false).map { card =>
             if(game.isJunk(card)) (card,1.0)
             else if(!game.isDangerous(card)) (card,0.7)
+            //Opponent is not expecting us to discard if we have a play available
+            else if(ckPlaysNow.nonEmpty) (card,0.2)
             else (card,0.02) //TODO this should depend on hand position
           }
         case (DISCARD_USEFUL | DISCARD_PLAYABLE) =>
