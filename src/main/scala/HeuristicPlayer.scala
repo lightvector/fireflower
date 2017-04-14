@@ -1159,45 +1159,52 @@ class HeuristicPlayer private (
       //TODO clogginess should be less for cards that are one-away from being playable
       //or for cards that literally are playable.
       val handClogFactor = game.hands.foldLeft(1.0) { case (acc,hand) =>
-        val numClogs = hand.count { cid =>
+        val numClogs = hand.foldLeft(0.0) { case (acc,cid) =>
           val card = seenMap(cid)
           //We can't see the card - either in our hand or we're a simulation for that player
           //This means it's safe to use ck=false, since we know no more than that player does, so whatever we
           //prove can be proven by them too.
-          if(card == Card.NULL) {
-            val possibles = possibleCards(cid,ck=false)
-            if(provablyPlayable(possibles,game))
-              false
-            else if(isBelievedPlayable(cid,now=false))
-              false
-            else if(provablyJunk(possibles,game))
-              false
-            else if(provablyDangerous(possibles,game))
-              true
-            else
-              isBelievedUseful(cid) && !isBelievedPlayable(cid,now=false)
+          val clogAmount = {
+            if(card == Card.NULL) {
+              val possibles = possibleCards(cid,ck=false)
+              if(provablyPlayable(possibles,game))
+                0.0
+              else if(isBelievedPlayable(cid,now=false))
+                0.0
+              else if(provablyJunk(possibles,game))
+                0.0
+              else if(provablyDangerous(possibles,game))
+                1.0
+              else if(isBelievedUseful(cid) && !isBelievedPlayable(cid,now=false))
+                1.0
+              else
+                0.0
+            }
+            //We can actually see the card
+            else {
+              //TODO playable cards can sometimes clog a hand if they're hard to hint out and/or the
+              //player's current belief about them is wrong. Maybe experiment with this.
+              if(game.isPlayable(card))
+                0.0
+              else if(probablyCorrectlyBelievedPlayableSoon(cid,game))
+                0.0
+              else if(game.isDangerous(card))
+                1.0
+              //TODO should we count believed-playable junk cards as clogging?
+              else if(isBelievedUseful(cid))
+                1.0
+              else
+                0.0
+            }
           }
-          //We can actually see the card
-          else {
-            //TODO playable cards can sometimes clog a hand if they're hard to hint out and/or the
-            //player's current belief about them is wrong. Maybe experiment with this.
-            if(game.isPlayable(card))
-              false
-            else if(probablyCorrectlyBelievedPlayableSoon(cid,game))
-              false
-            else if(game.isDangerous(card))
-              true
-            //TODO should we count believed-playable junk cards as clogging?
-            else
-              isBelievedUseful(cid)
-          }
+          acc + clogAmount
         }
+        val freeSpace = rules.handSize.toDouble - numClogs
+        val knots = Array(0.7, 0.9, 0.97, 0.995, 1.0)
         val value = {
-          if(numClogs >= rules.handSize) 0.7
-          else if(numClogs >= rules.handSize-1) 0.9
-          else if(numClogs >= rules.handSize-2) 0.97
-          else if(numClogs >= rules.handSize-3) 0.995
-          else 1.0
+          val idx = math.floor(freeSpace).toInt
+          if(idx >= knots.length-1) knots(knots.length-1)
+          else knots(idx) + (knots(idx+1)-knots(idx)) * (freeSpace - idx.toDouble)
         }
         acc * value
       }
@@ -1260,6 +1267,8 @@ class HeuristicPlayer private (
       val eval = transformEval(raw)
 
       if(debugging(game)) {
+        println("EVAL----------------")
+        maybePrintAllBeliefs(game)
         println("PotentHnt: %.2f, GoodKnow: %.2f, Fixup: %.2f, NetHnt: %.2f, HSF: %.3f".format(
           numPotentialHints,goodKnowledge,fixupHintsRequired,netFreeHints,hintScoreFactor))
         println("TurnsWPossPlayLeft: %d, TWPPLF: %.3f".format(
