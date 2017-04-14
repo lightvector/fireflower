@@ -411,6 +411,13 @@ class HeuristicPlayer private (
     }
   }
 
+  //Check if there was no moment where this card was in a hand when someone discarded resulting
+  //in at least minPostHints hints left.
+  def cardIsNew(pid: PlayerId, cid: CardId, minPostHints: Int) = {
+    val ds = discardSnapshots.find { ds => ds.postHints >= 3 }
+    ds.forall { ds => !ds.postHands(pid).contains(cid) }
+  }
+
   type DiscardGoodness = Int
   val DISCARD_PROVABLE_JUNK: DiscardGoodness = 6
   val DISCARD_JUNK: DiscardGoodness = 5
@@ -733,8 +740,7 @@ class HeuristicPlayer private (
               val firstCid = hand(firstHid)
               //Test if "new" - find the first snapshot with at least 3 hints after, and if it fails to contain the card,
               //then the card "never clearly had a chance to be hinted yet".
-              val ds = discardSnapshots.find { ds => ds.postHints >= 3 }
-              ds.forall { ds => !ds.postHands(pid).contains(firstCid) } &&
+              cardIsNew(pid,firstCid,minPostHints=3) &&
               //No dangers yet - all possiblities for all cards in hint either have numCardsInitial = 1 or are not dangerous
               //or are completely known or are playable.
               hintCids.forall { cid =>
@@ -989,7 +995,17 @@ class HeuristicPlayer private (
         numDiscardsLeft +
         numHints +
         //Assume that unknown hints gain some value, even if we don't know what would be hinted
-        numUnknownHintsGiven * 0.1 +
+        numUnknownHintsGiven * {
+          //They're more valuable if we have a new card that we just drew.
+          //TODO this isn't exactly right for 3 and 4 player
+          if(cardIsNew(myPid,game.hands(myPid)(1),minPostHints=3))
+            0.45
+          else if(cardIsNew(myPid,game.hands(myPid)(0),minPostHints=3))
+            0.30
+          else
+            0.10
+        } +
+        //Also count future hints from playing 5s
         {
           if(rules.extraHintFromPlayingMax)
             colors.count { color => game.nextPlayable(color.id) <= rules.maxNumber }
@@ -1408,11 +1424,11 @@ class HeuristicPlayer private (
           //TODO pretty inaccurate, make this smarter. Note though that the evaluation
           //underestimates how good UnknownHint is because it doesn't do anything!
           //TODO why is this only possible at such a low value?
-          //Assign a 2% probability to giving a hint
+          //Assign a 20% probability to giving a hint
+          //TODO assign more probability in 3 and 4 player if you can see the next person needs a hint.
           List(
-            // (GiveDiscard(mld),1.0)
-            (GiveDiscard(mld),0.98),
-            (GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),0.02)
+            (GiveDiscard(mld),0.80),
+            (GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),0.20)
           )
         }
       }
