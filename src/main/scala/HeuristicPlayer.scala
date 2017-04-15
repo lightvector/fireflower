@@ -737,14 +737,18 @@ class HeuristicPlayer private (
               provablyJunk(possibles,postGame) ||
               possibles.length == 1
             } && {
-              //The number of cards possibly playable is >= the number of cards of this number that are useful.
+              //TODO tweak these conditions
+              //The number of cards possibly playable is > the number of cards of this number that are useful.
               //OR all color piles are >= that number
+              //OR the first card is new and the number of cards possibly playable is >= the number useful and not playable
               val numPossiblyPlayable = hintCids.count { cid =>
                 val possibles = possibleCards(cid,ck=true)
                 !provablyNotPlayable(possibles,postGame)
               }
               numPossiblyPlayable > colors.count { color => postGame.nextPlayable(color.id) <= num } ||
-              colors.forall { color => postGame.nextPlayable(color.id) >= num }
+              colors.forall { color => postGame.nextPlayable(color.id) >= num } ||
+              (cardIsNew(pid,hintCids.head,minPostHints=3) &&
+                numPossiblyPlayable >= colors.count { color => postGame.nextPlayable(color.id) < num })
             }
           case HintColor(color) =>
             //Affects the first card and cards other than the first are already protected.
