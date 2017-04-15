@@ -361,6 +361,7 @@ class HeuristicPlayer private (
 
   //Check if to the best of our knowledge, based on what's actually visible and what we suspect, a given card will
   //be playable once it gets reached in play sequence. NOT COMMON KNOWLEDGE!
+  //Also, skips over bad cards in the sequence, assuming we can hint to fix them.
   def probablyCorrectlyBelievedPlayableSoon(cid: CardId, game: Game): Boolean = {
     primeBelief(cid) match {
       case None => false
@@ -402,8 +403,11 @@ class HeuristicPlayer private (
               else if(simulatedNextPlayable(card.color.id) > card.number) {
                 loopOk(seqIdx+1,false) //Loop again and if we stop here, it wasn't playable, so not good.
               }
-              //TODO maybe add a case for provably not being the next card to play...?
-              else false
+              //TODO for some reason this helps on 2p and 3p but hurts on 4p. Why?
+              else {
+                if(rules.numPlayers <= 3) loopOk(seqIdx+1,false)
+                else false
+              }
             }
           }
           loopOk(0,false)
