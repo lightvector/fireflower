@@ -652,8 +652,9 @@ class HeuristicPlayer private (
     }
   }
 
-  def handleSeenBomb(sb: SeenBomb, postGame: Game): Unit = {
+  def handleSeenBomb(sb: SeenBomb, preGame: Game, postGame: Game): Unit = {
     val cid = sb.cid
+    val bombPid = preGame.curPlayer
     updateSeenMap(postGame)
 
     primeBelief(cid) match {
@@ -670,6 +671,27 @@ class HeuristicPlayer private (
         val card = seenMap(cid)
         if(card != Card.NULL && postGame.isUseful(card)) {
           addBelief(ProtectedSetInfo(cids = b.info.cids))
+        }
+        //If the card was only ever hinted playable as the first in its sequence,
+        //protect everything older than the oldest in the most recent play sequence.
+        val beliefs = beliefMap(cid)
+        if(beliefs.forall { belief =>
+          belief match {
+            case (b2: PlaySequence) => b2.seqIdx == 0
+            case (_: ProtectedSet) => true
+            case (_: JunkSet) => true
+          }
+        }) {
+          val preHand = preGame.hands(bombPid)
+          val lastHid = b.info.cids.foldLeft(0) { case (acc,cid) =>
+            preHand.findIdx { c => c == cid } match {
+              //A different player had the card in sequence! Ignore it.
+              case None => acc
+              case Some(hid) => Math.max(acc,hid)
+            }
+          }
+          val protectedCids = ((lastHid+1) to (preHand.length - 1)).map { hid => preHand(hid) }.toArray
+          addBelief(ProtectedSetInfo(cids = protectedCids))
         }
     }
   }
@@ -1342,7 +1364,7 @@ class HeuristicPlayer private (
       case (sp: SeenPlay) =>
         handleSeenPlay(sp,postGame)
       case (sb: SeenBomb) =>
-        handleSeenBomb(sb,postGame)
+        handleSeenBomb(sb,preGame,postGame)
       case (sh: SeenHint) =>
         handleSeenHint(sh,postGame)
     }
