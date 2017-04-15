@@ -53,7 +53,15 @@ case class JunkSetInfo(cids: Array[CardId]) extends BeliefInfo
 case class JunkSet(seqIdx: Int, info: JunkSetInfo) extends Belief
 
 //One is created every time someone discards, recording the state of the game when they did so.
-case class DiscardSnapshot(pid: PlayerId, postHands: Array[Hand], postHints: Int, nextPlayable: Array[Number])
+case class DiscardSnapshot(
+  pid: PlayerId,
+  postHands: Array[Hand],
+  postHints: Int,
+  nextPlayable: Array[Number],
+  preDangers: Array[Card],
+  nextPidExpectedPlaysNow: List[HandId],
+  nextPidMostLikelyDiscard: HandId
+)
 
 //Basic constructors and other static functions for the player
 object HeuristicPlayer extends PlayerGen {
@@ -82,7 +90,7 @@ object HeuristicPlayer extends PlayerGen {
 
   //PlayerGen interface - Generate a set of players for a game.
   def genPlayers(rules: Rules, seed: Long): Array[Player] = {
-    (0 to (rules.numPlayers-1)).map { myPid =>
+    (0 until rules.numPlayers).map { myPid =>
       this(rules,myPid)
     }.toArray
   }
@@ -154,7 +162,7 @@ class HeuristicPlayer private (
   def updateSeenMap(game: Game): Unit = {
     game.seenMap.copyTo(seenMap)
     game.seenMap.copyTo(seenMapCK)
-    (0 to (rules.numPlayers-1)).foreach { pid =>
+    (0 until rules.numPlayers).foreach { pid =>
       game.hands(pid).foreach { cid => seenMapCK(cid) = Card.NULL }
     }
   }
@@ -163,13 +171,13 @@ class HeuristicPlayer private (
   def addBelief(info: BeliefInfo): Unit = {
     info match {
       case (info:PlaySequenceInfo) =>
-        for(i <- 0 to (info.cids.length-1))
+        for(i <- 0 until info.cids.length)
           beliefMap.add(info.cids(i),PlaySequence(seqIdx=i,info=info))
       case (info:ProtectedSetInfo) =>
-        for(i <- 0 to (info.cids.length-1))
+        for(i <- 0 until info.cids.length)
           beliefMap.add(info.cids(i),ProtectedSet(seqIdx=i,info=info))
       case (info:JunkSetInfo) =>
-        for(i <- 0 to (info.cids.length-1))
+        for(i <- 0 until info.cids.length)
           beliefMap.add(info.cids(i),JunkSet(seqIdx=i,info=info))
     }
   }
@@ -441,19 +449,19 @@ class HeuristicPlayer private (
     val possibles: Array[List[Card]] = revHand.map { cid => possibleCards(cid,ck) }
 
     val (pos,dg): (Int,DiscardGoodness) = {
-      val provableJunkDiscard = (0 to (numCards-1)).find { pos => provablyJunk(possibles(pos),game) }
+      val provableJunkDiscard = (0 until numCards).find { pos => provablyJunk(possibles(pos),game) }
       provableJunkDiscard match {
         case Some(pos) => (pos,DISCARD_PROVABLE_JUNK)
         case None =>
-          val junkDiscard = (0 to (numCards-1)).find { pos => isBelievedJunk(revHand(pos)) && !provablyUseful(possibles(pos),game) }
+          val junkDiscard = (0 until numCards).find { pos => isBelievedJunk(revHand(pos)) && !provablyUseful(possibles(pos),game) }
           junkDiscard match {
             case Some(pos) => (pos,DISCARD_JUNK)
             case None =>
-              val regularDiscard = (0 to (numCards-1)).find { pos => !isBelievedUseful(revHand(pos)) }
+              val regularDiscard = (0 until numCards).find { pos => !isBelievedUseful(revHand(pos)) }
               regularDiscard match {
                 case Some(pos) => (pos,DISCARD_REGULAR)
                 case None =>
-                  val usefulDiscard = (0 to (numCards-1)).find { pos =>
+                  val usefulDiscard = (0 until numCards).find { pos =>
                     !isBelievedPlayable(revHand(pos),now=false) &&
                     !isBelievedProtected(revHand(pos)) &&
                     !provablyDangerous(possibles(pos),game) &&
@@ -462,7 +470,7 @@ class HeuristicPlayer private (
                   usefulDiscard match {
                     case Some(pos) => (pos,DISCARD_USEFUL)
                     case None =>
-                      val maybeGameOverDiscard = (0 to (numCards-1)).find { pos =>
+                      val maybeGameOverDiscard = (0 until numCards).find { pos =>
                         !provablyDangerous(possibles(pos),game)
                       }
                       maybeGameOverDiscard match {
@@ -482,7 +490,7 @@ class HeuristicPlayer private (
   //ck determines if we only check using common knowledge or all observed info
   def expectedPlays(pid: PlayerId, game: Game, now: Boolean, ck: Boolean): List[HandId] = {
     val hand = game.hands(pid)
-    (0 to (hand.numCards-1)).filter { hid =>
+    (0 until hand.numCards).filter { hid =>
       val cid = hand(hid)
       val possibles = possibleCards(cid,ck)
       if(provablyNotPlayable(possibles,game))
@@ -510,7 +518,7 @@ class HeuristicPlayer private (
 
   def allBelievedPlays(game: Game): List[CardId] = {
     game.hands.flatMap { hand =>
-      (0 to (hand.numCards-1)).flatMap { hid =>
+      (0 until hand.numCards).flatMap { hid =>
         val cid = hand(hid)
         primeBelief(cid) match {
           case None => None
@@ -538,6 +546,7 @@ class HeuristicPlayer private (
     val discardPid = preGame.curPlayer
     val preExpectedPlaysNow: List[HandId] = expectedPlays(discardPid,preGame,now=true,ck=true)
     val prePossibles = possibleCards(cid,ck=true)
+    val preDangers = seenMapCK.filterDistinctUnseen { card => preGame.isDangerous(card) }.toArray
 
     updateSeenMap(postGame)
 
@@ -545,17 +554,6 @@ class HeuristicPlayer private (
 
     //TODO if there are sufficiently many hints left and a player discards, they must not believe they have playable cards,
     //so update those beliefs.
-
-    //Make a new snapshot
-    val newDiscardSnapshot = {
-      DiscardSnapshot(
-        pid = discardPid,
-        postHands = postGame.hands.map { hand => Hand(hand) },
-        postHints = postGame.numHints,
-        nextPlayable = postGame.nextPlayable.clone()
-      )
-    }
-    discardSnapshots = newDiscardSnapshot :: discardSnapshots
 
     //Discard finesse based on if the discard if the discard was of an expected play
     if(card != Card.NULL && preExpectedPlaysNow.contains(sd.hid)) {
@@ -567,7 +565,7 @@ class HeuristicPlayer private (
         if(prePossiblesPlayable.nonEmpty) {
 
           //Find all players that have a copy of that card other than the discarder
-          val hasCardAndNotDiscarder = (0 to (rules.numPlayers - 1)).map { pid =>
+          val hasCardAndNotDiscarder = (0 until rules.numPlayers).map { pid =>
             if(pid == discardPid) false
             else postGame.hands(pid).exists { cid => prePossiblesPlayable.contains(seenMap(cid)) }
           }.toArray
@@ -580,10 +578,10 @@ class HeuristicPlayer private (
             if(hasCardCount == 0 && myPid != discardPid) List(myPid)
             //If nobody has that card and it was us giving that hint, it signals everyone else.
             else if(hasCardCount == 0 && myPid == discardPid) {
-              (0 to rules.numPlayers-1).filter { pid => pid != myPid }.toList
+              (0 until rules.numPlayers).filter { pid => pid != myPid }.toList
             }
             //If exactly one other player than the discarder has the card, it signals them.
-            else if(hasCardCount == 1) (0 to (rules.numPlayers - 1)).filter { pid => hasCardAndNotDiscarder(pid) }.toList
+            else if(hasCardCount == 1) (0 until rules.numPlayers).filter { pid => hasCardAndNotDiscarder(pid) }.toList
             //Else signals nobody
             else List()
           }
@@ -634,6 +632,21 @@ class HeuristicPlayer private (
           addBelief(ProtectedSetInfo(cids = b.info.cids))
       }
     }
+
+    //Make a new snapshot
+    val newDiscardSnapshot = {
+      DiscardSnapshot(
+        pid = discardPid,
+        postHands = postGame.hands.map { hand => Hand(hand) },
+        postHints = postGame.numHints,
+        nextPlayable = postGame.nextPlayable.clone(),
+        preDangers = preDangers,
+        //TODO these make things quite a bit slower, any way to speed up?
+        nextPidExpectedPlaysNow = expectedPlays(postGame.curPlayer,postGame,now=true,ck=true),
+        nextPidMostLikelyDiscard = mostLikelyDiscard(postGame.curPlayer,postGame,ck=true)._1
+      )
+    }
+    discardSnapshots = newDiscardSnapshot :: discardSnapshots
   }
 
   //Handle a play that we've seen, updating info and beliefmaps.
@@ -694,7 +707,7 @@ class HeuristicPlayer private (
               case Some(hid) => Math.max(acc,hid)
             }
           }
-          val protectedCids = ((lastHid+1) to (preHand.length - 1)).map { hid => preHand(hid) }.toArray
+          val protectedCids = ((lastHid+1) until preHand.length).map { hid => preHand(hid) }.toArray
           addBelief(ProtectedSetInfo(cids = protectedCids))
         }
     }
@@ -711,7 +724,7 @@ class HeuristicPlayer private (
 
     val pid = sh.pid //Player who was hinted
     val hand = postGame.hands(pid) //Hand of player who was hinted
-    val hintCids = (0 to (hand.numCards-1)).flatMap { hid =>
+    val hintCids = (0 until hand.numCards).flatMap { hid =>
       if(sh.appliedTo(hid)) Some(hand(hid))
       else None
     }.toArray
@@ -734,65 +747,9 @@ class HeuristicPlayer private (
 
     //Now update hintedMap with the logical information of the hint
     val hintedInfo = HintedInfo(sh, hand.cardArray())
-    for (hid <- 0 to (hand.numCards-1)) {
+    for (hid <- 0 until hand.numCards) {
       val hinted = Hinted(hid,sh.appliedTo(hid),hintedInfo)
       hintedMap.add(hand(hid),hinted)
-    }
-
-    //Check if it's a hint where the manner of the hint strongly indicates that it's a play hint
-    //even if it would otherwise touch the most likely discard or a believed play that was actually danger
-    val isPlayEvenIfAffectingMldOrDangerPlay: Boolean = {
-      {
-        //Hint affects at least one card that was not a play before and that could be playable now.
-        hintCids.exists { cid =>
-          val possibles = possibleCards(cid,ck=true)
-          !provablyNotPlayable(possibles,postGame) //could be playable now
-          !preExpectedPlaysNow.exists { hid => cid == hand(hid) } //not possible play before
-        }
-      } && {
-        sh.hint match {
-          case HintNumber(num) =>
-            //All cards in hint are either provably junk, possibly playable, or completely known
-            hintCids.forall { cid =>
-              val possibles = possibleCards(cid,ck=true)
-              !provablyNotPlayable(possibles,postGame) ||
-              provablyJunk(possibles,postGame) ||
-              possibles.length == 1
-            } && {
-              //TODO tweak these conditions
-              //The number of cards possibly playable is > the number of cards of this number that are useful.
-              //OR all color piles are >= that number
-              //OR the first card is new and the number of cards possibly playable is >= the number useful and not playable
-              val numPossiblyPlayable = hintCids.count { cid =>
-                val possibles = possibleCards(cid,ck=true)
-                !provablyNotPlayable(possibles,postGame)
-              }
-              numPossiblyPlayable > colors.count { color => postGame.nextPlayable(color.id) <= num } ||
-              colors.forall { color => postGame.nextPlayable(color.id) >= num } ||
-              (cardIsNew(pid,hintCids.head,minPostHints=3) &&
-                numPossiblyPlayable >= colors.count { color => postGame.nextPlayable(color.id) < num })
-            }
-          case HintColor(color) =>
-            //Affects the first card and cards other than the first are already protected.
-            //OR newest card is new and there are no dangers yet in that color
-            sh.appliedTo(0) && (1 to (hand.length - 1)).forall { hid => isBelievedProtected(hand(hid)) } ||
-            {
-              val firstHid = sh.appliedTo.indexWhere(b => b)
-              val firstCid = hand(firstHid)
-              //Test if "new" - find the first snapshot with at least 3 hints after, and if it fails to contain the card,
-              //then the card "never clearly had a chance to be hinted yet".
-              cardIsNew(pid,firstCid,minPostHints=3) &&
-              //No dangers yet - all possiblities for all cards in hint either have numCardsInitial = 1 or are not dangerous
-              //or are completely known or are playable.
-              hintCids.forall { cid =>
-                val possibles = possibleCards(cid,ck=true)
-                possibles.length == 1 ||
-                possibles.forall { card => numCardsInitial(card.arrayIdx) <= 1 || !postGame.isDangerous(card) || postGame.isPlayable(card) }
-              }
-            }
-          case _ => false
-        }
-      }
     }
 
     //Scan through all cids provided.
@@ -819,10 +776,12 @@ class HeuristicPlayer private (
     //See what card that player would have been likely to discard
     val (preMLD,preMLDGoodness): (HandId, DiscardGoodness) = mostLikelyDiscard(pid,postGame,ck=true)
 
+    //Affects the most likely discard, and the most likely discard could possibly be dangerous
     val suggestsMLDPossibleDanger = {
       sh.appliedTo(preMLD) &&
       !provablyNotDangerous(possibleCards(hand(preMLD),ck=true),postGame)
     }
+    //Proves that an expected/believed play is actually dangerous
     val provesPlayNowAsDanger = {
       preExpectedPlaysNow.exists { hid =>
         sh.appliedTo(hid)
@@ -830,10 +789,95 @@ class HeuristicPlayer private (
       }
     }
 
+    //MLD was hinted and it had no prior belief, but an earlier discard snapshot indicates it's safe
+    val mldSuggestedButSafeDueToDiscard = {
+      suggestsMLDPossibleDanger &&
+      primeBelief(hand(preMLD)).isEmpty && {
+        //Player immediately before the hinted player discarded and failed to stop us from discarding?
+        val beforePid = (pid + rules.numPlayers - 1) % rules.numPlayers
+        val ds = discardSnapshots.find { ds => ds.postHints >= 3 && ds.postHints < rules.maxHints && ds.pid == beforePid }
+        ds match {
+          case None => false
+          case Some(ds) =>
+            //There was no card we were expected to play, and the same card was our MLD at the time as well.
+            ds.nextPidExpectedPlaysNow.isEmpty &&
+            ds.postHands(pid)(ds.nextPidMostLikelyDiscard) == hand(preMLD) &&
+            {
+              //There is no possible card for mld that became dangerous in the meantime
+              val dangerNow = seenMapCK.filterDistinctUnseen { card => postGame.isDangerous(card) }.toArray
+              !(possibleCards(hand(preMLD),ck=true).exists { card =>
+                dangerNow.contains(card) && !ds.preDangers.contains(card)
+              })
+            }
+        }
+      }
+    }
+
+    //Check if it's a hint where the manner of the hint strongly indicates that it's a play hint
+    //even if it would otherwise touch the most likely discard or a believed play that was actually danger
+    val isPlayEvenIfAffectingMldOrDangerPlay: Boolean = {
+      {
+        //Hint affects at least one card that was not a play before and that could be playable now.
+        hintCids.exists { cid =>
+          val possibles = possibleCards(cid,ck=true)
+          !provablyNotPlayable(possibles,postGame) //could be playable now
+          !preExpectedPlaysNow.exists { hid => cid == hand(hid) } //not possible play before
+        }
+      } && {
+        //Suggests the MLD but a discard snapshot makes it safe, and there's no other reason we should
+        //interpret this hint as protection
+        (mldSuggestedButSafeDueToDiscard && !provesPlayNowAsDanger) || {
+          //Number-and-color-specific rules
+          sh.hint match {
+            case HintNumber(num) =>
+              //All cards in hint are either provably junk, possibly playable, or completely known
+              hintCids.forall { cid =>
+                val possibles = possibleCards(cid,ck=true)
+                !provablyNotPlayable(possibles,postGame) ||
+                provablyJunk(possibles,postGame) ||
+                possibles.length == 1
+              } && {
+                //TODO tweak these conditions
+                //The number of cards possibly playable is > the number of cards of this number that are useful.
+                //OR all color piles are >= that number
+                //OR the first card is new and the number of cards possibly playable is >= the number useful and not playable
+                val numPossiblyPlayable = hintCids.count { cid =>
+                  val possibles = possibleCards(cid,ck=true)
+                  !provablyNotPlayable(possibles,postGame)
+                }
+                numPossiblyPlayable > colors.count { color => postGame.nextPlayable(color.id) <= num } ||
+                colors.forall { color => postGame.nextPlayable(color.id) >= num } ||
+                (cardIsNew(pid,hintCids.head,minPostHints=3) &&
+                  numPossiblyPlayable >= colors.count { color => postGame.nextPlayable(color.id) < num })
+              }
+            case HintColor(color) =>
+              //Affects the first card and cards other than the first are already protected.
+              //OR newest card is new and there are no dangers yet in that color
+              sh.appliedTo(0) && (1 until hand.length).forall { hid => isBelievedProtected(hand(hid)) } ||
+              {
+                val firstHid = sh.appliedTo.indexWhere(b => b)
+                val firstCid = hand(firstHid)
+                //Test if "new" - find the first snapshot with at least 3 hints after, and if it fails to contain the card,
+                //then the card "never clearly had a chance to be hinted yet".
+                cardIsNew(pid,firstCid,minPostHints=3) &&
+                //No dangers yet - all possiblities for all cards in hint either have numCardsInitial = 1 or are not dangerous
+                //or are completely known or are playable.
+                hintCids.forall { cid =>
+                  val possibles = possibleCards(cid,ck=true)
+                  possibles.length == 1 ||
+                  possibles.forall { card => numCardsInitial(card.arrayIdx) <= 1 || !postGame.isDangerous(card) || postGame.isPlayable(card) }
+                }
+              }
+            case _ => false
+          }
+        }
+      }
+    }
+
     //If this hint is an unknown hint, it does nothing
     if(sh.hint == UnknownHint)
     {}
-    //If (the hint targets the most likely discard and it could be dangerous OR proves a believed play now is danger)
+    //If (the hint possibly protects the most likely discard OR proves a believed play now is danger)
     //AND (there are no cards that the player would have played OR the hint touches a card we would have played)
     //AND (we don't trigger one of the exceptions for isPlayEvenIfAffectingMldOrDangerPlay)
     //then it's a protection hint.
@@ -868,11 +912,11 @@ class HeuristicPlayer private (
     //to all older cards that are not provably junk older than the oldest in the hint
     else if(hintCids.forall { cid => provablyJunk(possibleCards(cid,ck=true),postGame) }) {
       var oldestHintHid = 0
-      for(hid <- 0 to (sh.appliedTo.length-1)) {
+      for(hid <- 0 until sh.appliedTo.length) {
         if(sh.appliedTo(hid))
           oldestHintHid = hid
       }
-      val protectedCids = ((oldestHintHid+1) to (sh.appliedTo.length-1)).map { hid => postGame.hands(pid)(hid) }
+      val protectedCids = ((oldestHintHid+1) until sh.appliedTo.length).map { hid => postGame.hands(pid)(hid) }
       addBelief(ProtectedSetInfo(cids = protectedCids.toArray))
     }
   }
@@ -997,7 +1041,7 @@ class HeuristicPlayer private (
         //On the last round
         if(game.finalTurnsLeft >= 0) {
           //Count remaining players who have a turn
-          (0 to game.finalTurnsLeft-1).count { pidOffset =>
+          (0 until game.finalTurnsLeft).count { pidOffset =>
             val pid = (game.curPlayer + pidOffset) % rules.numPlayers
             //Whose hand has at least one possibly playable card.
             game.hands(pid).exists { cid => !provablyNotPlayable(possibleCards(cid,ck=false),game) }
@@ -1161,7 +1205,7 @@ class HeuristicPlayer private (
       //Equals distance from playable + number of dangers in front
       def distanceFromPlayable(card: Card): Int = {
         var distance = card.number - game.nextPlayable(card.color.id)
-        for(num <- game.nextPlayable(card.color.id) to card.number - 1) {
+        for(num <- game.nextPlayable(card.color.id) until card.number) {
           if(game.isDangerous(Card(card.color,num)))
             distance += 1
         }
@@ -1618,7 +1662,7 @@ class HeuristicPlayer private (
 
     //Try all hint actions
     if(game.numHints > 0) {
-      (0 to rules.numPlayers-2).foreach { pidOffset =>
+      (0 until rules.numPlayers-1).foreach { pidOffset =>
         possibleHintTypes.foreach { hint =>
           val ga = GiveHint((nextPid+pidOffset) % rules.numPlayers,hint)
           if(game.isLegal(ga)) {
@@ -1635,7 +1679,7 @@ class HeuristicPlayer private (
 
   def maybePrintAllBeliefs(game: Game): Unit = {
     if(debugging(game)) {
-      (0 to rules.numPlayers-1).foreach { pid =>
+      (0 until rules.numPlayers).foreach { pid =>
         game.hands(pid).foreach { cid =>
           val card = seenMap(cid)
           println("P%d Card %s (#%d) Belief %s".format(
