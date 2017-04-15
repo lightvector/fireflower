@@ -1154,6 +1154,25 @@ class HeuristicPlayer private (
       //TODO try adding a new term that adds a bonus for having at least a few playable cards in hand
       //so as to encourage saving them from discarding?
 
+      //For decreasing the clog value a little for things near playable or if nothing in front is dangerous.
+      //Equals distance from playable + number of dangers in front
+      def distanceFromPlayable(card: Card): Int = {
+        var distance = card.number - game.nextPlayable(card.color.id)
+        for(num <- game.nextPlayable(card.color.id) to card.number - 1) {
+          if(game.isDangerous(Card(card.color,num)))
+            distance += 1
+        }
+        distance
+      }
+      def clogFactorOfDistance(distance: Int): Double = {
+        if(distance <= 1) 0.80
+        else if(distance <= 2) 0.88
+        else if(distance <= 3) 0.94
+        else if(distance <= 4) 0.97
+        else if(distance <= 5) 0.99
+        else 1.00
+      }
+
       //TODO clogginess should weigh less for protected cards that are playable after another protected card
       //and or similar, and they haven't been hinted yet.
       //TODO clogginess should be less for cards that are one-away from being playable
@@ -1167,40 +1186,54 @@ class HeuristicPlayer private (
           val clogAmount = {
             if(card == Card.NULL) {
               val possibles = possibleCards(cid,ck=false)
-              if(provablyPlayable(possibles,game))
-                0.0
-              else if(isBelievedPlayable(cid,now=false))
-                0.0
-              else if(provablyJunk(possibles,game))
-                0.0
-              else if(provablyDangerous(possibles,game))
-                1.0
-              else if(isBelievedUseful(cid) && !isBelievedPlayable(cid,now=false))
-                1.0
-              else
-                0.0
+              val base = {
+                if(provablyPlayable(possibles,game))
+                  0.0
+                else if(isBelievedPlayable(cid,now=false))
+                  0.0
+                else if(provablyJunk(possibles,game))
+                  0.0
+                else if(provablyDangerous(possibles,game))
+                  1.0
+                else if(isBelievedUseful(cid) && !isBelievedPlayable(cid,now=false))
+                  1.0
+                else
+                  0.0
+              }
+              if(base <= 0.0) base
+              else {
+                val distance = possibles.foldLeft(0) { case (acc,card) => math.max(acc,distanceFromPlayable(card)) }
+                base * clogFactorOfDistance(distance)
+              }
             }
             //We can actually see the card
             else {
-              //TODO playable cards can sometimes clog a hand if they're hard to hint out and/or the
-              //player's current belief about them is wrong. Maybe experiment with this.
-              if(game.isPlayable(card))
-                0.0
-              else if(probablyCorrectlyBelievedPlayableSoon(cid,game))
-                0.0
-              else if(game.isDangerous(card))
-                1.0
-              //TODO should we count believed-playable junk cards as clogging?
-              else if(isBelievedUseful(cid))
-                1.0
-              else
-                0.0
+              val base = {
+                //TODO playable cards can sometimes clog a hand if they're hard to hint out and/or the
+                //player's current belief about them is wrong. Maybe experiment with this.
+                if(game.isPlayable(card))
+                  0.0
+                else if(probablyCorrectlyBelievedPlayableSoon(cid,game))
+                  0.0
+                else if(game.isDangerous(card))
+                  1.0
+                //TODO should we count believed-playable junk cards as clogging?
+                else if(isBelievedUseful(cid))
+                  1.0
+                else
+                  0.0
+              }
+              if(base <= 0.0) base
+              else {
+                val distance = distanceFromPlayable(card)
+                base * clogFactorOfDistance(distance)
+              }
             }
           }
           acc + clogAmount
         }
         val freeSpace = rules.handSize.toDouble - numClogs
-        val knots = Array(0.7, 0.9, 0.97, 0.995, 1.0)
+        val knots = Array(0.66, 0.88, 0.96, 0.99, 1.00)
         val value = {
           val idx = math.floor(freeSpace).toInt
           if(idx >= knots.length-1) knots(knots.length-1)
