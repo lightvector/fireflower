@@ -179,6 +179,9 @@ class HeuristicPlayer private (
     hintedMap(cid).forall { hinted => rules.isConsistent(hinted.info.sh.hint, hinted.applied, card) }
   }
 
+  //TODO once it becomes CK about a card's exact identity, it should no longer be part of sm.filterDistinctUnseen
+  //so that we can infer things based on non-seen but CK known cards.
+
   //TODO this function is called frequently!
   //Maybe we can memoize it - might be a decent speedup.
 
@@ -377,10 +380,6 @@ class HeuristicPlayer private (
             game.isPlayable(card)
         }
         else {
-          //TODO this requires all cards involved in the hint up to this point to be good
-          //unless provably not
-          //Maybe allow for bad ordering if correction hints could be given
-
           //Loop and see if the card becomes playable as we play in sequence
           val simulatedNextPlayable = game.nextPlayable.clone()
           def loopOk(seqIdx:Int, okIfStopHere:Boolean): Boolean = {
@@ -404,6 +403,7 @@ class HeuristicPlayer private (
                 loopOk(seqIdx+1,false) //Loop again and if we stop here, it wasn't playable, so not good.
               }
               //TODO for some reason this helps on 2p and 3p but hurts on 4p. Why?
+              //For <= 3 players, skipping bad cards is okay - count the later ones even if needing fixing
               else {
                 if(rules.numPlayers <= 3) loopOk(seqIdx+1,false)
                 else false
@@ -701,7 +701,6 @@ class HeuristicPlayer private (
   }
 
   //TODO some big items not yet implemented!
-  // - hint to cause someone to bomb also indicates protection
   // - finesses/crossovers (for 3p and higher)
   // - protected two green cards with "G", green 2 out. Then hint the first one as 4 - should play the second then the first.
 
@@ -845,7 +844,6 @@ class HeuristicPlayer private (
     ) {
       addBelief(ProtectedSetInfo(cids = hintCids))
     }
-    //TODO this needs to be more sophisticated as well
     //Otherwise if at least one card hinted could be playable after the hint, then it's a play hint
     else if(hintCids.exists { cid => !provablyNotPlayable(possibleCards(cid,ck=true),postGame) }) {
       //Cards that are provably playable come first in the ordering
@@ -1036,13 +1034,6 @@ class HeuristicPlayer private (
 
       val numHints = game.numHints
 
-      // TODO this helps on 3 and 4 player but hurts on 2-player!?
-      // val numHintsAdjusted =
-      //   if(numHints >= rules.maxHints) numHints - 0.70
-      //   else if(numHints == rules.maxHints-1) numHints - 0.25
-      //   else if(numHints == rules.maxHints-2) numHints - 0.05
-      //   else numHints - 0.00
-
       val numDiscardsLeft = rules.maxDiscards - game.numDiscarded
       val numUnknownHintsGiven = game.numUnknownHintsGiven
       val numPotentialHints = {
@@ -1139,33 +1130,6 @@ class HeuristicPlayer private (
       //
       //How much of the remaining score are we not getting due to lack of turns
       val turnsLeftFactor = Math.min(maxPlaysLeft.toDouble, 0.8 * turnsWithPossiblePlayLeft) / maxPlaysLeft.toDouble
-
-      //TODO currently not good, test again later
-      // val discardLimitFactor = {
-      //   if(rules.numPlayers >= 4) {
-      //     if(game.numDiscarded > rules.maxDiscards) 0.500
-      //     else if(game.numDiscarded == rules.maxDiscards) 0.800
-      //     else if(game.numDiscarded == rules.maxDiscards-1) 0.920
-      //     else if(game.numDiscarded == rules.maxDiscards-2) 0.980
-      //     else if(game.numDiscarded == rules.maxDiscards-3) 0.995
-      //     else 1.000
-      //   }
-      //   else if(rules.numPlayers >= 3) {
-      //     if(game.numDiscarded > rules.maxDiscards) 0.500
-      //     else if(game.numDiscarded == rules.maxDiscards) 0.880
-      //     else if(game.numDiscarded == rules.maxDiscards-1) 0.960
-      //     else if(game.numDiscarded == rules.maxDiscards-2) 0.990
-      //     else if(game.numDiscarded == rules.maxDiscards-3) 0.998
-      //     else 1.000
-      //   }
-      //   else {
-      //     if(game.numDiscarded > rules.maxDiscards) 0.500
-      //     else if(game.numDiscarded == rules.maxDiscards) 0.920
-      //     else if(game.numDiscarded == rules.maxDiscards-1) 0.980
-      //     else if(game.numDiscarded == rules.maxDiscards-2) 0.995
-      //     else 1.000
-      //   }
-      // }
 
       //DANGER AND CLOGGING -----------------------------------------------------------------------------------------
       //Compute eval factors relating to having clogged hands or having discarded useful cards
@@ -1491,7 +1455,7 @@ class HeuristicPlayer private (
       //Play if possible, randomly among all of them
       if(playsNow.nonEmpty)
         playsNow.map { hid => (GivePlay(hid),1.0) }
-      //Give a hint if at max hints //TODO improve this for the last round
+      //Give a hint if at max hints
       else if(game.numHints >= rules.maxHints)
         List((GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),1.0))
       //No hints, must discard
