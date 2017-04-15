@@ -733,9 +733,6 @@ class HeuristicPlayer private (
     val preExpectedPlaysNow: List[HandId] = expectedPlays(pid,postGame,now=true,ck=true)
     val preAllBelievedPlays: List[CardId] = allBelievedPlays(postGame) //TODO should this include provable plays?
 
-    //See what card that player would have been likely to discard
-    val (preMLD,preMLDGoodness): (HandId, DiscardGoodness) = mostLikelyDiscard(pid,postGame,ck=true)
-
     //Now update hintedMap with the logical information of the hint
     val hintedInfo = HintedInfo(sh, hand.cardArray())
     for (hid <- 0 to (hand.numCards-1)) {
@@ -744,8 +741,8 @@ class HeuristicPlayer private (
     }
 
     //Check if it's a hint where the manner of the hint strongly indicates that it's a play hint
-    //even if it would otherwise touch the most likely discard
-    val isPlayEvenIfAffectingMLD: Boolean = {
+    //even if it would otherwise touch the most likely discard or a believed play that was actually danger
+    val isPlayEvenIfAffectingMldOrDangerPlay: Boolean = {
       {
         //Hint affects at least one card that was not a play before and that could be playable now.
         hintCids.exists { cid =>
@@ -820,19 +817,31 @@ class HeuristicPlayer private (
       }
     }
 
+    //See what card that player would have been likely to discard
+    val (preMLD,preMLDGoodness): (HandId, DiscardGoodness) = mostLikelyDiscard(pid,postGame,ck=true)
+
+    val suggestsMLDPossibleDanger = {
+      sh.appliedTo(preMLD) &&
+      !provablyNotDangerous(possibleCards(hand(preMLD),ck=true),postGame)
+    }
+    val provesPlayNowAsDanger = {
+      preExpectedPlaysNow.exists { hid =>
+        sh.appliedTo(hid)
+        provablyDangerous(possibleCards(hand(hid),ck=true),postGame)
+      }
+    }
+
     //If this hint is an unknown hint, it does nothing
     if(sh.hint == UnknownHint)
     {}
-    //If the hint targets the most likely discard
+    //If (the hint targets the most likely discard and it could be dangerous OR proves a believed play now is danger)
     //AND (there are no cards that the player would have played OR the hint touches a card we would have played)
-    //AND (it's not a number hint where common knowledge says at least one MUST be playable)
-    //AND (it's possible that the mld is a dangerous card after this hint)
+    //AND (we don't trigger one of the exceptions for isPlayEvenIfAffectingMldOrDangerPlay)
     //then it's a protection hint.
     else if(
-      sh.appliedTo(preMLD) &&
+      (suggestsMLDPossibleDanger || provesPlayNowAsDanger) &&
         (preExpectedPlaysNow.isEmpty || preExpectedPlaysNow.exists { hid => sh.appliedTo(hid) }) &&
-        !isPlayEvenIfAffectingMLD &&
-        !provablyNotDangerous(possibleCards(hand(preMLD),ck=true),postGame)
+        !isPlayEvenIfAffectingMldOrDangerPlay
     ) {
       addBelief(ProtectedSetInfo(cids = hintCids))
     }
