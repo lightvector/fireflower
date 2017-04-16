@@ -380,23 +380,25 @@ class HeuristicPlayer private (
     }
   }
 
-  def numPlayableInOrder(cards: List[Card], game: Game): Int = {
+  //Given a list of turns where each turn has a list of cards that could be played, approximate
+  //the longest sequence of cards that can be played with one pass.
+  def numPlayableInOrder(cardsByTurn: List[List[Card]], game: Game): Int = {
     //Loop and see if the card becomes playable as we play in sequence
     val simulatedNextPlayable = game.nextPlayable.clone()
-    def loop(cards: List[Card], acc: Int): Int = {
-      cards match {
+    def loop(cardsByTurn: List[List[Card]], acc: Int): Int = {
+      cardsByTurn match {
         case Nil => acc
-        case card :: cards =>
-          if(simulatedNextPlayable(card.color.id) == card.number) {
-            simulatedNextPlayable(card.color.id) += 1
-            loop(cards,acc+1)
-          }
-          else {
-            loop(cards,acc)
-          }
+        case Nil :: cardsByTurn =>
+          loop(cardsByTurn,acc)
+        case cards :: cardsByTurn =>
+          val playables = cards.filter { card => simulatedNextPlayable(card.color.id) == card.number }
+          val count = if(playables.length >= 1) 1 else 0
+          //Pretend we could play all of them, for the purpose of determining if future cards are playable.
+          playables.foreach { card => simulatedNextPlayable(card.color.id) = card.number + 1 }
+          loop(cardsByTurn,acc+count)
       }
     }
-    loop(cards,0)
+    loop(cardsByTurn,0)
   }
 
   //Check if to the best of our knowledge, based on what's actually visible and what we suspect, a given card will
@@ -1076,6 +1078,7 @@ class HeuristicPlayer private (
           //Count remaining players who have a turn
           (0 until game.finalTurnsLeft).count { pidOffset =>
             val pid = (game.curPlayer + pidOffset) % rules.numPlayers
+            //TODO this should check for possibly useful, not possibly playable
             //Whose hand has at least one possibly playable card.
             game.hands(pid).exists { cid => !provablyNotPlayable(possibleCards(cid,ck=false),game) }
           }
@@ -1164,7 +1167,7 @@ class HeuristicPlayer private (
 
       //Collects what cards are known and could be played soon, player by player over the next round
       //in the order that they come up.
-      var distinctKnownPlayCards: List[Card] = List()
+      var distinctKnownPlayCardsByTurn: List[List[Card]] = List()
       //Adjustment - bonus for "good" knowledge we already know that saves hints
       val (knownPlays,goodKnowledge) = {
         //TODO actually use kp
@@ -1176,6 +1179,7 @@ class HeuristicPlayer private (
         }
         (0 until nextRoundLen).foreach { pidOffset =>
           val pid = (game.curPlayer+pidOffset) % rules.numPlayers
+          var distinctKnownPlayCardsThisTurn: List[Card] = List()
           game.hands(pid).foreach { cid =>
             //TODO here and other places we use seenmap, consider using uniquePossible
             val card = game.seenMap(cid)
@@ -1184,9 +1188,12 @@ class HeuristicPlayer private (
               //If we can't exactly determine a card, then count it as a good play, but otherwise
               //filter out cases where multiple players each think they have the playable of a card
               //to avoid over-counting them.
-              if(inferredCard == Card.NULL || !distinctKnownPlayCards.contains(inferredCard)) {
+              if(inferredCard == Card.NULL || {
+                !distinctKnownPlayCardsByTurn.exists(_.contains(inferredCard)) &&
+                !distinctKnownPlayCardsThisTurn.contains(inferredCard)
+              }) {
                 if(inferredCard != Card.NULL)
-                  distinctKnownPlayCards = inferredCard +: distinctKnownPlayCards
+                  distinctKnownPlayCardsThisTurn = inferredCard :: distinctKnownPlayCardsThisTurn
                 gk += 0.45 / 0.85
                 kp += 1.00
               }
@@ -1207,8 +1214,9 @@ class HeuristicPlayer private (
             if(uniquePossible(cid,ck=true) != Card.NULL)
               gk += 0.01 / 0.85
           }
+          distinctKnownPlayCardsByTurn = distinctKnownPlayCardsThisTurn.reverse :: distinctKnownPlayCardsByTurn
         }
-        distinctKnownPlayCards = distinctKnownPlayCards.reverse
+        distinctKnownPlayCardsByTurn = distinctKnownPlayCardsByTurn.reverse
         (kp,gk)
       }
 
@@ -1239,10 +1247,9 @@ class HeuristicPlayer private (
       //Hack - for adjusting the evaluation in the last round given the cards that are probably correctly believed playable.
       //Ideally we would also count known plays as worth more (see above TODO), but that seems to make things worse!
       val singleRoundExpectedNumPlays = {
-        numPlayed + numPlayableInOrder(distinctKnownPlayCards,game)
+        numPlayed + numPlayableInOrder(distinctKnownPlayCardsByTurn,game)
       }
 
-      //TODO use this
       val finalExpectedNumPlaysDueToHints = {
         if(expectedNumPlaysDueToHints < singleRoundExpectedNumPlays)
           expectedNumPlaysDueToHints + 0.65 * (singleRoundExpectedNumPlays - expectedNumPlaysDueToHints)
@@ -1251,8 +1258,7 @@ class HeuristicPlayer private (
       }
 
       //Re-adjust to be a factor in terms of numPlayed and maxPlaysLeft.
-      val hintScoreFactor = (Math.min(expectedNumPlaysDueToHints, numPlayed + maxPlaysLeft) - numPlayed) / maxPlaysLeft
-      (expectedNumPlaysDueToHints, hintScoreFactor)
+      val hintScoreFactor = (Math.min(finalExpectedNumPlaysDueToHints, numPlayed + maxPlaysLeft) - numPlayed) / maxPlaysLeft
 
       //LIMITED TIME/TURNS -----------------------------------------------------------------------------------------
       //Compute eval factors relating to having a limited amount of time or discards in the game.
@@ -1440,8 +1446,8 @@ class HeuristicPlayer private (
           numPlayed, maxPlaysLeft, provableLossBy))
         println("Hints: %.2f, Knol: %.2f, Fixup: %.2f, NetHnt: %.2f".format(
           numPotentialHints,goodKnowledge,fixupHintsRequired,netFreeHints))
-        println("HintedOrPlayed: %.2f, Remaining: %.2f, Expected: %.2f, HSF: %.3f".format(
-          numHintedOrPlayed,numRemainingToHint,expectedNumPlaysDueToHints,hintScoreFactor))
+        println("HintedOrPlayed: %.2f, Remaining: %.2f, SingleRoundPlays: %.2f, Expected: %.2f, HSF: %.3f".format(
+          numHintedOrPlayed,numRemainingToHint,singleRoundExpectedNumPlays,finalExpectedNumPlaysDueToHints,hintScoreFactor))
         println("TurnsWPossPlayLeft: %d, TWPPLF: %.3f".format(
           turnsWithPossiblePlayLeft, turnsLeftFactor))
         println("DangerCount: %.3f, DF: %.3f".format(
