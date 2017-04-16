@@ -171,13 +171,13 @@ object PlayerTests {
    [info] Score 18  Games: 38  Percent:  3.8%  Cum: 76.3%
    [info] Score 19  Games: 30  Percent:  3.0%  Cum: 72.5%
    [info] Score 20  Games: 35  Percent:  3.5%  Cum: 69.5%
-   [info] Score 21  Games: 46  Percent:  4.6%  Cum: 66.0%
-   [info] Score 22  Games: 66  Percent:  6.6%  Cum: 61.4%
-   [info] Score 23  Games: 74  Percent:  7.4%  Cum: 54.8%
-   [info] Score 24  Games: 173  Percent: 17.3%  Cum: 47.4%
-   [info] Score 25  Games: 301  Percent: 30.1%  Cum: 30.1%
-   [info] Average Score: 20.627
-   [info] Average Utility: 56.304
+   [info] Score 21  Games: 47  Percent:  4.7%  Cum: 66.0%
+   [info] Score 22  Games: 66  Percent:  6.6%  Cum: 61.3%
+   [info] Score 23  Games: 72  Percent:  7.2%  Cum: 54.7%
+   [info] Score 24  Games: 170  Percent: 17.0%  Cum: 47.5%
+   [info] Score 25  Games: 305  Percent: 30.5%  Cum: 30.5%
+   [info] Average Score: 20.63
+   [info] Average Utility: 56.51
    [info]
    [info] HeuristicStandard4P:
    [info] Score  0  Games:  0  Percent:  0.0%  Cum: 100.0%
@@ -200,16 +200,16 @@ object PlayerTests {
    [info] Score 17  Games: 41  Percent:  4.1%  Cum: 73.3%
    [info] Score 18  Games: 45  Percent:  4.5%  Cum: 69.2%
    [info] Score 19  Games: 49  Percent:  4.9%  Cum: 64.7%
-   [info] Score 20  Games: 48  Percent:  4.8%  Cum: 59.8%
-   [info] Score 21  Games: 50  Percent:  5.0%  Cum: 55.0%
-   [info] Score 22  Games: 83  Percent:  8.3%  Cum: 50.0%
-   [info] Score 23  Games: 109  Percent: 10.9%  Cum: 41.7%
-   [info] Score 24  Games: 190  Percent: 19.0%  Cum: 30.8%
-   [info] Score 25  Games: 118  Percent: 11.8%  Cum: 11.8%
-   [info] Average Score: 19.384
-   [info] Average Utility: 44.668
+   [info] Score 20  Games: 49  Percent:  4.9%  Cum: 59.8%
+   [info] Score 21  Games: 48  Percent:  4.8%  Cum: 54.9%
+   [info] Score 22  Games: 86  Percent:  8.6%  Cum: 50.1%
+   [info] Score 23  Games: 109  Percent: 10.9%  Cum: 41.5%
+   [info] Score 24  Games: 183  Percent: 18.3%  Cum: 30.6%
+   [info] Score 25  Games: 123  Percent: 12.3%  Cum: 12.3%
+   [info] Average Score: 19.385
+   [info] Average Utility: 44.92
    [info]
-   [info] Time: 1238.806451651
+   [info] Time: 1245.568210635
 
    */
 

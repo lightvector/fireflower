@@ -380,6 +380,25 @@ class HeuristicPlayer private (
     }
   }
 
+  def numPlayableInOrder(cards: List[Card], game: Game): Int = {
+    //Loop and see if the card becomes playable as we play in sequence
+    val simulatedNextPlayable = game.nextPlayable.clone()
+    def loop(cards: List[Card], acc: Int): Int = {
+      cards match {
+        case Nil => acc
+        case card :: cards =>
+          if(simulatedNextPlayable(card.color.id) == card.number) {
+            simulatedNextPlayable(card.color.id) += 1
+            loop(cards,acc+1)
+          }
+          else {
+            loop(cards,acc)
+          }
+      }
+    }
+    loop(cards,0)
+  }
+
   //Check if to the best of our knowledge, based on what's actually visible and what we suspect, a given card will
   //be playable once it gets reached in play sequence. NOT COMMON KNOWLEDGE!
   //Also, skips over bad cards in the sequence, assuming we can hint to fix them.
@@ -1143,14 +1162,21 @@ class HeuristicPlayer private (
           }
         }
 
+      //Collects what cards are known and could be played soon, player by player over the next round
+      //in the order that they come up.
+      var distinctKnownPlayCards: List[Card] = List()
       //Adjustment - bonus for "good" knowledge we already know that saves hints
       val (knownPlays,goodKnowledge) = {
         //TODO actually use kp
         var kp = 0.0
         var gk = 0.0
-        var distinctPlayCards: List[Card] = List()
-        game.hands.foreach { hand =>
-          hand.foreach { cid =>
+        val nextRoundLen = {
+          if(game.finalTurnsLeft >= 0) game.finalTurnsLeft
+          else rules.numPlayers
+        }
+        (0 until nextRoundLen).foreach { pidOffset =>
+          val pid = (game.curPlayer+pidOffset) % rules.numPlayers
+          game.hands(pid).foreach { cid =>
             //TODO here and other places we use seenmap, consider using uniquePossible
             val card = game.seenMap(cid)
             if(probablyCorrectlyBelievedPlayableSoon(cid,game)) {
@@ -1158,9 +1184,9 @@ class HeuristicPlayer private (
               //If we can't exactly determine a card, then count it as a good play, but otherwise
               //filter out cases where multiple players each think they have the playable of a card
               //to avoid over-counting them.
-              if(inferredCard == Card.NULL || !distinctPlayCards.contains(inferredCard)) {
+              if(inferredCard == Card.NULL || !distinctKnownPlayCards.contains(inferredCard)) {
                 if(inferredCard != Card.NULL)
-                  distinctPlayCards = inferredCard +: distinctPlayCards
+                  distinctKnownPlayCards = inferredCard +: distinctKnownPlayCards
                 gk += 0.45 / 0.85
                 kp += 1.00
               }
@@ -1182,6 +1208,7 @@ class HeuristicPlayer private (
               gk += 0.01 / 0.85
           }
         }
+        distinctKnownPlayCards = distinctKnownPlayCards.reverse
         (kp,gk)
       }
 
@@ -1209,8 +1236,22 @@ class HeuristicPlayer private (
         }
       }
 
+      //Hack - for adjusting the evaluation in the last round given the cards that are probably correctly believed playable.
+      //Ideally we would also count known plays as worth more (see above TODO), but that seems to make things worse!
+      val singleRoundExpectedNumPlays = {
+        numPlayed + numPlayableInOrder(distinctKnownPlayCards,game)
+      }
+
+      //TODO use this
+      val finalExpectedNumPlaysDueToHints = {
+        if(expectedNumPlaysDueToHints < singleRoundExpectedNumPlays)
+          expectedNumPlaysDueToHints + 0.65 * (singleRoundExpectedNumPlays - expectedNumPlaysDueToHints)
+        else
+          expectedNumPlaysDueToHints
+      }
+
       //Re-adjust to be a factor in terms of numPlayed and maxPlaysLeft.
-      val hintScoreFactor = (Math.min(expectedNumPlaysDueToHints, numPlayed + maxPlaysLeft)   - numPlayed) / maxPlaysLeft
+      val hintScoreFactor = (Math.min(expectedNumPlaysDueToHints, numPlayed + maxPlaysLeft) - numPlayed) / maxPlaysLeft
       (expectedNumPlaysDueToHints, hintScoreFactor)
 
       //LIMITED TIME/TURNS -----------------------------------------------------------------------------------------
@@ -1578,6 +1619,7 @@ class HeuristicPlayer private (
           //TODO why is this only possible at such a low value?
           //Assign a 20% probability to giving a hint
           //TODO assign more probability in 3 and 4 player if you can see the next person needs a hint.
+          //TODO make this understand last-round mechanics and when delay hints are needed?
           List(
             (GiveDiscard(mld),0.80),
             (GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),0.20)
