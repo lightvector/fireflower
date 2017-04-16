@@ -1078,9 +1078,8 @@ class HeuristicPlayer private (
           //Count remaining players who have a turn
           (0 until game.finalTurnsLeft).count { pidOffset =>
             val pid = (game.curPlayer + pidOffset) % rules.numPlayers
-            //TODO this should check for possibly useful, not possibly playable
-            //Whose hand has at least one possibly playable card.
-            game.hands(pid).exists { cid => !provablyNotPlayable(possibleCards(cid,ck=false),game) }
+            //Whose hand has at least one possibly useful card.
+            game.hands(pid).exists { cid => !provablyJunk(possibleCards(cid,ck=false),game) }
           }
         }
         else {
@@ -1264,7 +1263,8 @@ class HeuristicPlayer private (
       //Compute eval factors relating to having a limited amount of time or discards in the game.
 
       //TODO this has not been tested or tuned much
-      //
+      //TODO should add a small constant factor so that the 0.8 says that if you have numPlayers turns
+      //left and that many plays left, it thinks it's possible.
       //How much of the remaining score are we not getting due to lack of turns
       val turnsLeftFactor = Math.min(maxPlaysLeft, 0.8 * turnsWithPossiblePlayLeft) / maxPlaysLeft
 
