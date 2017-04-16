@@ -1142,8 +1142,10 @@ class HeuristicPlayer private (
           hand.foreach { cid =>
             //TODO here and other places we use seenmap, consider using uniquePossible
             val card = game.seenMap(cid)
-            if(probablyCorrectlyBelievedPlayableSoon(cid,game))
-              gk += 0.55 / 0.85
+            if(probablyCorrectlyBelievedPlayableSoon(cid,game)) {
+              gk += 0.45 / 0.85
+              kp += 0.25
+            }
             //TODO also add to the "isBelievedProtected(cid)" condition a check for whether it is
             //provably (ck=true) dangerous, or perhaps just whether the card is known exactly
             else if(isBelievedProtected(cid) && (card != Card.NULL && game.isDangerous(card)))
