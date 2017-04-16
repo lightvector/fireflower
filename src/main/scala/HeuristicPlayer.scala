@@ -1037,6 +1037,10 @@ class HeuristicPlayer private (
       //PRELIMARIES-----------------------------------------------------------------------------------------
       //Compute some basic bounds and values used in the eval
 
+      //Number of cards successfully played already
+      val numPlayed = game.numPlayed.toDouble
+
+      //Maximum number of turns that there could potentially be this game that play a card.
       val turnsWithPossiblePlayLeft = {
         //On the last round
         if(game.finalTurnsLeft >= 0) {
@@ -1052,6 +1056,8 @@ class HeuristicPlayer private (
           game.deck.length + rules.numPlayers
         }
       }
+
+      //Maximum number of possible plays left to make in the game, taking into account turnsWithPossiblePlayLeft
       val maxPlaysLeft = {
         if(rules.stopEarlyLoss)
           rules.maxScore - game.numPlayed
@@ -1067,17 +1073,16 @@ class HeuristicPlayer private (
           }
           Math.min(usefulCardCount,turnsWithPossiblePlayLeft)
         }
-      }
-      //The amount by which we will provably miss the max score by
-      val lossGap = rules.maxScore - game.numPlayed - maxPlaysLeft
+      }.toDouble
 
+      //The amount by which we will provably miss the max score by.
+      val provableLossBy = rules.maxScore - numPlayed - maxPlaysLeft
 
       //NET HINTS-----------------------------------------------------------------------------------------
       //The most important term in the eval function - having more hints left in the game
       //(including in the future) is better.
 
       val numHints = game.numHints
-
       val numDiscardsLeft = rules.maxDiscards - game.numDiscarded
       val numUnknownHintsGiven = game.numUnknownHintsGiven
       val numPotentialHints = {
@@ -1094,15 +1099,16 @@ class HeuristicPlayer private (
           else
             0.10
         } +
-        //Also count future hints from playing 5s
+        //Also count future hints from playing 5s. But the last one isn't useful, so subtract 1.
         {
           if(rules.extraHintFromPlayingMax)
-            colors.count { color => game.nextPlayable(color.id) <= rules.maxNumber }
+            Math.max(0, -1 + colors.count { color => game.nextPlayable(color.id) <= rules.maxNumber })
           else
             0
         }
       }
 
+      //TODO fix up all of the coefficients below and tune them
       //Adjustment - penalize for "bad" beliefs that need more hints to fix
       val fixupHintsRequired =
         game.hands.foldLeft(0.0) { case (acc,hand) =>
@@ -1118,7 +1124,7 @@ class HeuristicPlayer private (
                   !game.isPlayable(card) &&
                   !game.isDangerous(card) //This because danger we often have to hint anyways, so no cost to have to fixup
                 )
-                  0.3
+                  0.30 / 0.85
                 else
                   0.0
               }
@@ -1128,44 +1134,61 @@ class HeuristicPlayer private (
         }
 
       //Adjustment - bonus for "good" knowledge we already know that saves hints
-      val goodKnowledge =
-        game.hands.foldLeft(0.0) { case (acc,hand) =>
-          hand.foldLeft(acc) { case (acc,cid) =>
+      val (knownPlays,goodKnowledge) = {
+        //TODO actually use kp
+        var kp = 0.0
+        var gk = 0.0
+        game.hands.foreach { hand =>
+          hand.foreach { cid =>
             //TODO here and other places we use seenmap, consider using uniquePossible
             val card = game.seenMap(cid)
-            val value = {
-              if(probablyCorrectlyBelievedPlayableSoon(cid,game))
-                0.55
-              //TODO also add to the "isBelievedProtected(cid)" condition a check for whether it is
-              //provably (ck=true) dangerous, or perhaps just whether the card is known exactly
-              else if(isBelievedProtected(cid) && (card != Card.NULL && game.isDangerous(card)))
-                0.2
-              else if(isBelievedProtected(cid) && (card != Card.NULL && game.isPlayable(card)))
-                0.1
-              //TODO try stuff like this
-              //else if(isBelievedJunk(cid) && (card == Card.NULL || game.isJunk(card)))
-              //  0.1
-              else
-                0.0
-            }
+            if(probablyCorrectlyBelievedPlayableSoon(cid,game))
+              gk += 0.55 / 0.85
+            //TODO also add to the "isBelievedProtected(cid)" condition a check for whether it is
+            //provably (ck=true) dangerous, or perhaps just whether the card is known exactly
+            else if(isBelievedProtected(cid) && (card != Card.NULL && game.isDangerous(card)))
+              gk += 0.20 / 0.85
+            else if(isBelievedProtected(cid) && (card != Card.NULL && game.isPlayable(card)))
+              gk += 0.10 / 0.85
+            //TODO try stuff like this
+            //else if(isBelievedJunk(cid) && (card == Card.NULL || game.isJunk(card)))
+            // gk += 0.12
             //TODO possibly add a bonus for knowing color vs number?
 
             //TODO this should probably be a bit higher
             //Add a bonus for knowing the card exactly
-            val exactBonus = if(uniquePossible(cid,ck=true) != Card.NULL) 0.01 else 0.00
-            acc + value + exactBonus
+            if(uniquePossible(cid,ck=true) != Card.NULL)
+              gk += 0.01 / 0.85
           }
         }
-
-      //All of the hint-related factors combined, and adjusted.
-      val netFreeHints =
-        numPotentialHints * 0.85 + goodKnowledge - (fixupHintsRequired + maxPlaysLeft) - 4
-      //How much of the remaining score are we not getting due to lack of hints
-      val hintScoreFactor = {
-        val hintScoreFactorRaw = (maxPlaysLeft.toDouble + 3.0 - softPlus(-netFreeHints,2.5)) / (maxPlaysLeft + 3.0)
-        //Avoid it going negative
-        softPlus(hintScoreFactorRaw,0.1)
+        (kp,gk)
       }
+
+      val numHintedOrPlayed = numPlayed + knownPlays * 0.65
+      val numRemainingToHint = maxPlaysLeft - knownPlays * 0.65
+      val netFreeHints = (numPotentialHints - fixupHintsRequired + goodKnowledge) * 0.85  - numRemainingToHint - 3.0
+
+      //How many plays we have or expect to be able to hint in the future.
+      val expectedNumPlaysDueToHints = {
+        //Dummy value if there's nothing left to hint
+        if(numRemainingToHint <= 0)
+          numHintedOrPlayed
+        else {
+          val gapDueToLowHints = softPlus(-netFreeHints,2.5)
+          //Add 3 in numerator and denominator to scale to be closer to 1
+          var hintScoreFactorRaw = (maxPlaysLeft - gapDueToLowHints + 3.0) / (maxPlaysLeft + 3.0)
+          //Avoid it going negative, smoothly
+          hintScoreFactorRaw = softPlus(hintScoreFactorRaw,0.1)
+          //Avoid it going above 1
+          hintScoreFactorRaw = Math.min(hintScoreFactorRaw,1.0)
+          //Apply factor for final result
+          numHintedOrPlayed + numRemainingToHint * hintScoreFactorRaw
+        }
+      }
+
+      //Re-adjust to be a factor in terms of numPlayed and maxPlaysLeft.
+      val hintScoreFactor = (Math.min(expectedNumPlaysDueToHints, numPlayed + maxPlaysLeft)   - numPlayed) / maxPlaysLeft
+      (expectedNumPlaysDueToHints, hintScoreFactor)
 
       //LIMITED TIME/TURNS -----------------------------------------------------------------------------------------
       //Compute eval factors relating to having a limited amount of time or discards in the game.
@@ -1173,7 +1196,7 @@ class HeuristicPlayer private (
       //TODO this has not been tested or tuned much
       //
       //How much of the remaining score are we not getting due to lack of turns
-      val turnsLeftFactor = Math.min(maxPlaysLeft.toDouble, 0.8 * turnsWithPossiblePlayLeft) / maxPlaysLeft.toDouble
+      val turnsLeftFactor = Math.min(maxPlaysLeft, 0.8 * turnsWithPossiblePlayLeft) / maxPlaysLeft
 
       //DANGER AND CLOGGING -----------------------------------------------------------------------------------------
       //Compute eval factors relating to having clogged hands or having discarded useful cards
@@ -1339,9 +1362,9 @@ class HeuristicPlayer private (
       }
       val raw = {
         if(rules.stopEarlyLoss)
-          game.numPlayed + maxPlaysLeft * totalFactor
+          numPlayed + maxPlaysLeft * totalFactor
         else
-          game.numPlayed + maxPlaysLeft * totalFactor - scoreDropPerLostPoint * lossGap
+          numPlayed + maxPlaysLeft * totalFactor - scoreDropPerLostPoint * provableLossBy
       }
 
       val eval = transformEval(raw)
@@ -1349,8 +1372,12 @@ class HeuristicPlayer private (
       if(debugging(game)) {
         println("EVAL----------------")
         maybePrintAllBeliefs(game)
-        println("PotentHnt: %.2f, GoodKnow: %.2f, Fixup: %.2f, NetHnt: %.2f, HSF: %.3f".format(
-          numPotentialHints,goodKnowledge,fixupHintsRequired,netFreeHints,hintScoreFactor))
+        println("NumPlayed: %.0f, MaxPlaysLeft: %.0f, ProvableLossBy %.0f".format(
+          numPlayed, maxPlaysLeft, provableLossBy))
+        println("Hints: %.2f, Knol: %.2f, Fixup: %.2f, NetHnt: %.2f".format(
+          numPotentialHints,goodKnowledge,fixupHintsRequired,netFreeHints))
+        println("HintedOrPlayed: %.2f, Remaining: %.2f, Expected: %.2f, HSF: %.3f".format(
+          numHintedOrPlayed,numRemainingToHint,expectedNumPlaysDueToHints,hintScoreFactor))
         println("TurnsWPossPlayLeft: %d, TWPPLF: %.3f".format(
           turnsWithPossiblePlayLeft, turnsLeftFactor))
         println("DangerCount: %.3f, DF: %.3f".format(
@@ -1361,8 +1388,8 @@ class HeuristicPlayer private (
           handClogFactor))
         println("NextTurnLossF: %.3f".format(
           nextTurnLossFactor))
-        println("PlaysLeft: %d, LossGap %d, TotalFactor: %.3f".format(
-          maxPlaysLeft, lossGap, totalFactor))
+        println("TotalFactor: %.3f".format(
+          totalFactor))
         println("Eval: %s".format(
           evalToString(eval)))
       }
