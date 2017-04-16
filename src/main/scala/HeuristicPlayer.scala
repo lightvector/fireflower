@@ -215,6 +215,16 @@ class HeuristicPlayer private (
     else sm.filterUniqueDistinctUnseen { card => allHintsConsistent(cid,card) }
   }
 
+  //If there is a unique possible useful value for this card, return it, else Card.NULL
+  def uniquePossibleUseful(cid: CardId, game: Game, ck: Boolean): Card = {
+    var sm = seenMap
+    if(ck) sm = seenMapCK
+
+    val seenCard = sm(cid)
+    if(seenCard != Card.NULL) { if(game.isUseful(seenCard)) seenCard else Card.NULL }
+    else sm.filterUniqueDistinctUnseen { card => allHintsConsistent(cid,card) && game.isUseful(card)}
+  }
+
   //Check if there is any possible value for this card. ALSO verifies consistency of cards we've seen.
   def hasPossible(cid: CardId): Boolean = {
     val seenCard = seenMap(cid)
@@ -1138,13 +1148,22 @@ class HeuristicPlayer private (
         //TODO actually use kp
         var kp = 0.0
         var gk = 0.0
+        var distinctPlayCards: List[Card] = List()
         game.hands.foreach { hand =>
           hand.foreach { cid =>
             //TODO here and other places we use seenmap, consider using uniquePossible
             val card = game.seenMap(cid)
             if(probablyCorrectlyBelievedPlayableSoon(cid,game)) {
-              gk += 0.45 / 0.85
-              kp += 0.25
+              val inferredCard = uniquePossibleUseful(cid,game,ck=false)
+              //If we can't exactly determine a card, then count it as a good play, but otherwise
+              //filter out cases where multiple players each think they have the playable of a card
+              //to avoid over-counting them.
+              if(inferredCard == Card.NULL || !distinctPlayCards.contains(inferredCard)) {
+                if(inferredCard != Card.NULL)
+                  distinctPlayCards = inferredCard +: distinctPlayCards
+                gk += 0.45 / 0.85
+                kp += 1.00
+              }
             }
             //TODO also add to the "isBelievedProtected(cid)" condition a check for whether it is
             //provably (ck=true) dangerous, or perhaps just whether the card is known exactly
@@ -1166,8 +1185,10 @@ class HeuristicPlayer private (
         (kp,gk)
       }
 
-      val numHintedOrPlayed = numPlayed + knownPlays * 0.65
-      val numRemainingToHint = maxPlaysLeft - knownPlays * 0.65
+      //TODO not sure why we can't count a known play as more than 0.1625 of an actual play.
+      //Increasing this makes things worse!
+      val numHintedOrPlayed = numPlayed + knownPlays * 0.1625
+      val numRemainingToHint = maxPlaysLeft - knownPlays * 0.1625
       val netFreeHints = (numPotentialHints - fixupHintsRequired + goodKnowledge) * 0.85  - numRemainingToHint - 3.0
 
       //How many plays we have or expect to be able to hint in the future.
