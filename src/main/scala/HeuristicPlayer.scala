@@ -1169,7 +1169,6 @@ class HeuristicPlayer private (
       var distinctKnownPlayCardsByTurn: List[List[Card]] = List()
       //Adjustment - bonus for "good" knowledge we already know that saves hints
       val (knownPlays,goodKnowledge) = {
-        //TODO actually use kp
         var kp = 0.0
         var gk = 0.0
         val nextRoundLen = {
@@ -1180,7 +1179,6 @@ class HeuristicPlayer private (
           val pid = (game.curPlayer+pidOffset) % rules.numPlayers
           var distinctKnownPlayCardsThisTurn: List[Card] = List()
           game.hands(pid).foreach { cid =>
-            //TODO here and other places we use seenmap, consider using uniquePossible
             val card = game.seenMap(cid)
             if(probablyCorrectlyBelievedPlayableSoon(cid,game)) {
               val inferredCard = uniquePossibleUseful(cid,game,ck=false)
@@ -1262,11 +1260,13 @@ class HeuristicPlayer private (
       //LIMITED TIME/TURNS -----------------------------------------------------------------------------------------
       //Compute eval factors relating to having a limited amount of time or discards in the game.
 
-      //TODO this has not been tested or tuned much
-      //TODO should add a small constant factor so that the 0.8 says that if you have numPlayers turns
-      //left and that many plays left, it thinks it's possible.
       //How much of the remaining score are we not getting due to lack of turns
-      val turnsLeftFactor = Math.min(maxPlaysLeft, 0.8 * turnsWithPossiblePlayLeft) / maxPlaysLeft
+      val turnsLeftFactor = Math.min(
+        maxPlaysLeft,
+        //0.8 * turnsWithPossiblePlayLeft because we want a slight excess in amount
+        //of turns left to feel comfortable
+        0.8 * turnsWithPossiblePlayLeft
+      ) / maxPlaysLeft
 
       //DANGER AND CLOGGING -----------------------------------------------------------------------------------------
       //Compute eval factors relating to having clogged hands or having discarded useful cards
@@ -1313,10 +1313,7 @@ class HeuristicPlayer private (
         else 1.00
       }
 
-      //TODO clogginess should weigh less for protected cards that are playable after another protected card
-      //and or similar, and they haven't been hinted yet.
-      //TODO clogginess should be less for cards that are one-away from being playable
-      //or for cards that literally are playable.
+      //TODO clogginess depend on distance from playable in more cases, such as for danger cards
       val handClogFactor = game.hands.foldLeft(1.0) { case (acc,hand) =>
         val numClogs = hand.foldLeft(0.0) { case (acc,cid) =>
           val card = seenMap(cid)
