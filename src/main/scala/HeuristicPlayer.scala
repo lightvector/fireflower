@@ -318,15 +318,6 @@ class HeuristicPlayer private (
     }
   }
 
-  def getPlaySequenceExn(cid: CardId): PlaySequence = {
-    primeBelief(cid) match {
-      case None => assertUnreachable()
-      case Some(_: ProtectedSet) => assertUnreachable()
-      case Some(_: JunkSet) => assertUnreachable()
-      case Some(b: PlaySequence) => b
-    }
-  }
-
   //TODO can we use this? It didn't seem to help when using it in probablyCorrectlyBelievedPlayableSoon
   //If knowledge proves or if beliefs and conventions strongly suggest that this card should be a specific card, return
   //that card, otherwise return Card.NULL.
@@ -547,15 +538,21 @@ class HeuristicPlayer private (
     }.toList
   }
 
-  def allBelievedPlays(game: Game): List[CardId] = {
+  //All cards believed playable or known exactly and playable.
+  def allBelievedAndUniqueProvablePlays(game: Game): List[CardId] = {
     game.hands.flatMap { hand =>
       (0 until hand.numCards).flatMap { hid =>
         val cid = hand(hid)
-        primeBelief(cid) match {
-          case None => None
-          case Some(_: ProtectedSet) => None
-          case Some(_: JunkSet) => None
-          case Some(_: PlaySequence) => Some(cid)
+        val card = uniquePossible(cid,ck=true)
+        if(card != Card.NULL && game.isPlayable(card))
+          Some(cid)
+        else {
+          primeBelief(cid) match {
+            case None => None
+            case Some(_: ProtectedSet) => None
+            case Some(_: JunkSet) => None
+            case Some(_: PlaySequence) => Some(cid)
+          }
         }
       }
     }.toList
@@ -774,7 +771,7 @@ class HeuristicPlayer private (
 
     //See what cards would have been be possible for the player to play by common knowledge
     val preExpectedPlaysNow: List[HandId] = expectedPlays(pid,postGame,now=true,ck=true)
-    val preAllBelievedPlays: List[CardId] = allBelievedPlays(postGame) //TODO should this include provable plays?
+    val preAllBelievedAndUniqueProvablePlays: List[CardId] = allBelievedAndUniqueProvablePlays(postGame)
 
     //Now update hintedMap with the logical information of the hint
     val hintedInfo = HintedInfo(sh, hand.cardArray())
@@ -791,13 +788,21 @@ class HeuristicPlayer private (
         val color = uniquePossibleUsefulColor(cid, postGame, ck=true)
         var keep = true
         if(color != NullColor) {
-          val earlierPlayCid = preAllBelievedPlays.find { playCid => playCid != cid && color == uniquePossibleUsefulColor(playCid, postGame, ck=true) }
+          val earlierPlayCid = preAllBelievedAndUniqueProvablePlays.find {
+            playCid => playCid != cid && color == uniquePossibleUsefulColor(playCid, postGame, ck=true)
+          }
           earlierPlayCid match {
             case None => ()
             case Some(earlierPlayCid) =>
-              val info = getPlaySequenceExn(earlierPlayCid).info
-              addBelief(PlaySequenceInfo(cids = info.cids :+ cid))
-              keep = false
+              primeBelief(cid) match {
+                case Some(b: PlaySequence) =>
+                  val info = b.info
+                  addBelief(PlaySequenceInfo(cids = info.cids :+ cid))
+                  keep = false
+                case _ =>
+                  addBelief(PlaySequenceInfo(cids = Array(earlierPlayCid,cid)))
+                  keep = false
+              }
           }
         }
         keep
