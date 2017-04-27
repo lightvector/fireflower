@@ -1185,6 +1185,7 @@ class HeuristicPlayer private (
           var distinctKnownPlayCardsThisTurn: List[Card] = List()
           game.hands(pid).foreach { cid =>
             val card = game.seenMap(cid)
+            val possibles = possibleCards(cid,ck=true)
             if(probablyCorrectlyBelievedPlayableSoon(cid,game)) {
               val inferredCard = uniquePossibleUseful(cid,game,ck=false)
               //If we can't exactly determine a card, then count it as a good play, but otherwise
@@ -1200,21 +1201,17 @@ class HeuristicPlayer private (
                 kp += 1.00
               }
             }
-            //TODO also add to the "isBelievedProtected(cid)" condition a check for whether it is
-            //provably (ck=true) dangerous, or perhaps just whether the card is known exactly
             else if(isBelievedProtected(cid) && (card != Card.NULL && game.isDangerous(card)))
               gk += 0.20 / 0.85
             else if(isBelievedProtected(cid) && (card != Card.NULL && game.isPlayable(card)))
               gk += 0.10 / 0.85
-            //TODO try stuff like this
-            //else if(isBelievedJunk(cid) && (card == Card.NULL || game.isJunk(card)))
-            // gk += 0.12
-            //TODO possibly add a bonus for knowing color vs number?
 
-            //TODO this should probably be a bit higher
             //Add a bonus for knowing the card exactly
-            if(uniquePossible(cid,ck=true) != Card.NULL)
-              gk += 0.01 / 0.85
+            val numPossibles = possibles.length
+            if(numPossibles <= 1)
+              gk += 0.02 / 0.85
+            else
+              gk += 0.01 / numPossibles
           }
           distinctKnownPlayCardsByTurn = distinctKnownPlayCardsThisTurn.reverse :: distinctKnownPlayCardsByTurn
         }
