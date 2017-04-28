@@ -402,7 +402,6 @@ class HeuristicPlayer private (
       case Some(_: JunkSet) => false
       case Some(b: PlaySequence) =>
         if(b.seqIdx <= 0) {
-          //TODO for some strange reason the bot wins more if this is changed to merely "uniquePossible(cid, ck=false)". Why???
           val card = believedCard(cid, game, ck=false)
           if(card == Card.NULL)
             false
@@ -417,7 +416,6 @@ class HeuristicPlayer private (
               okIfStopHere
             else {
               val cid = b.info.cids(seqIdx)
-              //TODO for some strange reason the bot wins more if this is changed to merely "uniquePossible(cid, ck=false)". Why???
               val card = believedCard(cid, game, ck=false)
 
               //Don't have a guess as to what the card is - can't say that it's playable soon
@@ -561,11 +559,6 @@ class HeuristicPlayer private (
   def firstPossiblyPlayableHid(game: Game, pid: PlayerId, ck: Boolean): Option[HandId] = {
     game.hands(pid).findIdx { cid => !provablyNotPlayable(possibleCards(cid,ck),game) }
   }
-
-  // TODO A major item that seems to sink the bot a lot right now is bad handling of discards and plays and bombs
-  // In particular, things like preferring to discard more after the opponent as (via not hinting you) signalled
-  // that your hand is safer than you think. Or understanding that drawing new cards yourself means less clogging
-  // of your partner later. Etc.
 
   //Handle a discard that we've seen, updating info and beliefmaps.
   //Assumes seenMap is already updated, but nothing else.
