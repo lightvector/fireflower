@@ -1406,7 +1406,7 @@ class HeuristicPlayer private (
           }
           if(!aboutToLose) 1.0
           else {
-            if(game.numHints <= 0) 0.85
+            if(game.numHints <= 0) 0.80
             else 0.90
           }
         }
@@ -1426,7 +1426,7 @@ class HeuristicPlayer private (
             expectedPlays(nextPid, game, now=false, ck=false).isEmpty
           }
         }
-        if(cantProtectDanger) 0.90
+        if(cantProtectDanger) 0.85
         else 1.00
       }
 
@@ -1605,6 +1605,7 @@ class HeuristicPlayer private (
     val actions = {
       val playsNow: List[HandId] = expectedPlays(pid, game, now=true, ck=false)
       //Play if possible, randomly among all of them
+      //TODO the next player will prefer actually to play what makes future cards playable.
       if(playsNow.nonEmpty)
         playsNow.map { hid => (GivePlay(hid),1.0) }
       //Give a hint if at max hints
