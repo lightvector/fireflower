@@ -1411,6 +1411,24 @@ class HeuristicPlayer private (
           }
         }
       }
+      //Penalize if the current player has 0 hints and the next player's MLD is scary and not known to be scary.
+      val fewHintsFactor = {
+        val nextPid = (game.curPlayer + 1) % rules.numPlayers
+        val cantProtectDanger = {
+          (game.numHints == 0 && game.numDiscarded < rules.maxDiscards && nextPid != myPid) && {
+            val (hid,_) = mostLikelyDiscard(nextPid, game, ck=true)
+            val cid = game.hands(nextPid)(hid)
+            !isBelievedProtected(cid) &&
+            provablyDangerous(possibleCards(cid,ck=false),game) &&
+            //Ideally should be now=true, but the problem is that we want to not penalize the case
+            //where the next player has no playables but the current player has a playable that makes
+            //the next player have a playable!
+            expectedPlays(nextPid, game, now=false, ck=false).isEmpty
+          }
+        }
+        if(cantProtectDanger) 0.90
+        else 1.00
+      }
 
       //PUT IT ALL TOGETHER -----------------------------------------------------------------------------------------
 
@@ -1420,7 +1438,8 @@ class HeuristicPlayer private (
         hintScoreFactor *
         bombsFactor *
         handClogFactor *
-        nextTurnLossFactor
+        nextTurnLossFactor *
+        fewHintsFactor
       }
       val raw = {
         if(rules.stopEarlyLoss)
