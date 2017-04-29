@@ -402,6 +402,7 @@ class HeuristicPlayer private (
       case Some(_: JunkSet) => false
       case Some(b: PlaySequence) =>
         if(b.seqIdx <= 0) {
+          //TODO try counting as playable even if you don't have a unique card that you think it is
           val card = believedCard(cid, game, ck=false)
           if(card == Card.NULL)
             false
@@ -575,6 +576,37 @@ class HeuristicPlayer private (
 
     //TODO if there are sufficiently many hints left and a player discards, they must not believe they have playable cards,
     //so update those beliefs.
+
+    //If a card discarded is part of a play sequence and had it been played it would have proven subsequent
+    //cards in the sequence to be unplayable, go ahead and mark them as protected or junk as appropriate.
+    //This is possible in the rare cases where a play gets discarded such as in a finesse. In the case where
+    //it actually does get played, we don't need a special case because simplifyBeliefs will do this updating
+    //of the remaining cards in sequence.
+    primeBelief(cid) match {
+      case None => ()
+      case Some(_: ProtectedSet) => ()
+      case Some(_: JunkSet) => ()
+      case Some(b: PlaySequence) =>
+        val remainingCids = b.info.cids.zipWithIndex.flatMap { case (laterCid,i) =>
+          if(i <= b.seqIdx) Some(laterCid)
+          else {
+            val possiblesWithoutThis = possibleCards(laterCid,ck=true).filter { laterCard => laterCard != card }
+            if(provablyJunk(possiblesWithoutThis,postGame)) {
+              addBelief(JunkSetInfo(cids = Array(laterCid)))
+              None
+            }
+            else if(provablyNotPlayable(possiblesWithoutThis,postGame)) {
+              addBelief(ProtectedSetInfo(cids = Array(laterCid)))
+              None
+            }
+            else
+              Some(laterCid)
+          }
+        }
+        if(remainingCids.length != b.info.cids.length) {
+          addBelief(PlaySequenceInfo(cids = remainingCids))
+        }
+    }
 
     //Discard finesse based on if the discard if the discard was of an expected play
     if(card != Card.NULL && preExpectedPlaysNow.contains(sd.hid)) {
