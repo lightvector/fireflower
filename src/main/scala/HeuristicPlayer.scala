@@ -1318,9 +1318,6 @@ class HeuristicPlayer private (
       }
       val dangerFactor = Math.max(0.0, 1.0 - (dangerCount / 200.0))
 
-      //TODO try adding a new term that adds a bonus for having at least a few playable cards in hand
-      //so as to encourage saving them from discarding?
-
       //For decreasing the clog value a little for things near playable or if nothing in front is dangerous.
       //Equals distance from playable + number of dangers in front
       def distanceFromPlayable(card: Card): Int = {
@@ -1541,7 +1538,7 @@ class HeuristicPlayer private (
   //Perform the given action assuming the given CardIds are the given Cards, and recursively search and evaluate the result.
   //Assumes other players act "simply", according to evalLikelyActionSimple
   //At the end, restore to the saved state.
-  def tryAction(game: Game, ga: GiveAction, assumingCards: List[(CardId,Card)], cDepth: Int, rDepth: Int, saved: SavedState): Double = {
+  def tryAction(game: Game, ga: GiveAction, assumingCards: List[(CardId,Card)], weight: Double, cDepth: Int, rDepth: Int, saved: SavedState): Double = {
     val gameCopy = Game(game)
     assumingCards.foreach { case (cid,card) => gameCopy.seenMap(cid) = card }
 
@@ -1574,9 +1571,10 @@ class HeuristicPlayer private (
       }
       restoreState(saved)
       if(debugging(gameCopy)) {
-        println("Tried %-10s Assuming %s Eval: %s".format(
+        println("Tried %-10s Assuming %s Weight %.2f Eval: %s".format(
           game.giveActionToString(ga),
           assumingCards.map({case (_,card) => card.toString(useAnsiColors=true)}).mkString(""),
+          weight,
           evalToString(eval)
         ))
       }
@@ -1618,9 +1616,9 @@ class HeuristicPlayer private (
     val saved = saveState()
     val nextActions = likelyActionsSimple(game.curPlayer,game,saved)
     weightedAverage(nextActions) { (nextAction,prob) =>
-      val eval = tryAction(game,nextAction,List(),cDepth,rDepth,saved)
+      val eval = tryAction(game,nextAction,List(),prob,cDepth,rDepth,saved)
       if(debugging(game)) {
-        println("Likely next: %-12s Weight: %.3f Eval: %s".format(
+        println("Likely next: %-12s Weight: %.2f Eval: %s".format(
           game.giveActionToString(nextAction),
           prob,
           evalToString(eval)
@@ -1719,8 +1717,8 @@ class HeuristicPlayer private (
       val possibles = possibleCards(cid,ck=false).filter { card => game.isPlayable(card) }
       val ga = GivePlay(hid)
 
-      val value = average(possibles) { (card,_) =>
-        tryAction(game, ga, assumingCards=List((cid,card)), cDepth, rDepth, saved)
+      val value = average(possibles) { (card,weight) =>
+        tryAction(game, ga, assumingCards=List((cid,card)), weight, cDepth, rDepth, saved)
       }
       recordAction(ga,value)
     }
@@ -1740,8 +1738,8 @@ class HeuristicPlayer private (
             else (card,1.0)
           }
           val ga = GivePlay(hid)
-          val value = weightedAverage(possibles) { (card,_) =>
-            tryAction(game, ga, assumingCards=List((cid,card)), cDepth, rDepth, saved)
+          val value = weightedAverage(possibles) { (card,weight) =>
+             tryAction(game, ga, assumingCards=List((cid,card)), weight, cDepth, rDepth, saved)
           }
           recordAction(ga,value)
       }
@@ -1785,8 +1783,8 @@ class HeuristicPlayer private (
 
       //Compute the average eval weighted by the weight of each card it could be.
       val ga = GiveDiscard(mld)
-      val value = weightedAverage(possiblesAndWeights) { (card,_) =>
-        tryAction(game, ga, assumingCards=List((cid,card)), cDepth, rDepth, saved)
+      val value = weightedAverage(possiblesAndWeights) { (card,weight) =>
+        tryAction(game, ga, assumingCards=List((cid,card)), weight, cDepth, rDepth, saved)
       }
       recordAction(ga,value)
 
@@ -1796,8 +1794,8 @@ class HeuristicPlayer private (
           val cid = game.hands(myPid)(hid)
           val possiblesAndWeights = possibleCards(cid,ck=false).flatMap { card => if(game.isPlayable(card)) Some((card,1.0)) else None }
           val ga = GiveDiscard(hid)
-          val value = weightedAverage(possiblesAndWeights) { (card,_) =>
-            tryAction(game, ga, assumingCards=List((cid,card)), cDepth, rDepth, saved)
+          val value = weightedAverage(possiblesAndWeights) { (card,weight) =>
+            tryAction(game, ga, assumingCards=List((cid,card)), weight, cDepth, rDepth, saved)
           }
           recordAction(ga,value)
         }
@@ -1810,7 +1808,7 @@ class HeuristicPlayer private (
         possibleHintTypes.foreach { hint =>
           val ga = GiveHint((nextPid+pidOffset) % rules.numPlayers,hint)
           if(game.isLegal(ga)) {
-            val value = tryAction(game, ga, assumingCards=List(), cDepth, rDepth, saved)
+            val value = tryAction(game, ga, assumingCards=List(), weight=1.0, cDepth, rDepth, saved)
             recordAction(ga,value)
           }
         }
