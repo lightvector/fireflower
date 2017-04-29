@@ -1404,7 +1404,7 @@ class HeuristicPlayer private (
             dg >= DISCARD_REGULAR &&
             expectedPlays(pid, game, now=true, ck=false).isEmpty
           }
-          if(!aboutToLose) 1.0
+          if(!aboutToLose) 1.00
           else {
             if(game.numHints <= 0) 0.80
             else 0.90
@@ -1427,6 +1427,8 @@ class HeuristicPlayer private (
           }
         }
         if(cantProtectDanger) 0.85
+        //TODO why does this hurt 3 player?
+        else if(game.numHints == 0 && rules.numPlayers != 3) 0.98
         else 1.00
       }
 
