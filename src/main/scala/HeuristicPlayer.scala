@@ -574,8 +574,6 @@ class HeuristicPlayer private (
 
     val card = seenMap(cid)
 
-    //TODO try discard finesse on 3p and 4p now that we've fixed the bug
-
     //TODO a discard (of junk?) when there are 0 hints means to protect the next player's MLD
 
     //TODO if there are sufficiently many hints left and a player discards, they must not believe they have playable cards,
@@ -615,8 +613,8 @@ class HeuristicPlayer private (
     //Discard finesse based on if the discard if the discard was of an expected play
     if(card != Card.NULL && preExpectedPlaysNow.contains(sd.hid)) {
       //TODO maybe also check that it was NOT the most likely discard?
-      //TODO this massively hurts playing strength on 3 and 4 player. Why? A bug? For now we hack to 2-player only
-      if(rules.numPlayers == 2) {
+      //TODO this massively hurts playing strength on 4 player. Why?
+      if(rules.numPlayers <= 3) {
         //It's a hint about a playable duplicate of what that player believed that card could be.
         val prePossiblesPlayable = prePossibles.filter { card => postGame.isPlayable(card) }
         if(prePossiblesPlayable.nonEmpty) {
