@@ -569,12 +569,11 @@ class HeuristicPlayer private (
     val preExpectedPlaysNow: List[HandId] = expectedPlays(discardPid,preGame,now=true,ck=true)
     val prePossibles = possibleCards(cid,ck=true)
     val preDangers = seenMapCK.filterDistinctUnseen { card => preGame.isDangerous(card) }.toArray
+    val preMLD = mostLikelyDiscard(preGame.curPlayer,preGame,ck=true)._1
 
     updateSeenMap(postGame)
 
     val card = seenMap(cid)
-
-    //TODO a discard (of junk?) when there are 0 hints means to protect the next player's MLD
 
     //TODO if there are sufficiently many hints left and a player discards, they must not believe they have playable cards,
     //so update those beliefs.
@@ -688,6 +687,16 @@ class HeuristicPlayer private (
       }
     }
 
+    val nextPidMostLikelyDiscard = mostLikelyDiscard(postGame.curPlayer,postGame,ck=true)._1
+
+    //If discarding MLD when there was an expected play and there are no hints,
+    //then protect the next player's MLD
+    if(postGame.numHints <= 1 && preExpectedPlaysNow.nonEmpty && preMLD == sd.hid) {
+      val nextMLDcid = postGame.hands(postGame.curPlayer)(nextPidMostLikelyDiscard)
+      if(!isBelievedProtected(nextMLDcid))
+      addBelief(ProtectedSetInfo(cids = Array(nextMLDcid)))
+    }
+
     //Make a new snapshot
     val newDiscardSnapshot = {
       DiscardSnapshot(
@@ -698,7 +707,7 @@ class HeuristicPlayer private (
         preDangers = preDangers,
         //TODO these make things quite a bit slower, any way to speed up?
         nextPidExpectedPlaysNow = expectedPlays(postGame.curPlayer,postGame,now=true,ck=true),
-        nextPidMostLikelyDiscard = mostLikelyDiscard(postGame.curPlayer,postGame,ck=true)._1
+        nextPidMostLikelyDiscard
       )
     }
     discardSnapshots = newDiscardSnapshot :: discardSnapshots
