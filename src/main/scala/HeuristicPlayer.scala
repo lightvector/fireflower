@@ -574,6 +574,10 @@ class HeuristicPlayer private (
 
     val card = seenMap(cid)
 
+    //TODO try discard finesse on 3p and 4p now that we've fixed the bug
+
+    //TODO a discard (of junk?) when there are 0 hints means to protect the next player's MLD
+
     //TODO if there are sufficiently many hints left and a player discards, they must not believe they have playable cards,
     //so update those beliefs.
 
@@ -1734,6 +1738,7 @@ class HeuristicPlayer private (
             //Weight nonplayable cards ultra-heavily, so that we'll only do this as a last resort.
             //TODO can we decrease the weight?
             if(isProtected && !game.isPlayable(card) && game.isDangerous(card)) (card,200.0)
+            else if(!game.isPlayable(card) && game.isDangerous(card)) (card,150.0)
             else if(!game.isPlayable(card)) (card,100.0)
             else (card,1.0)
           }

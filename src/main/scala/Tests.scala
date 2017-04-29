@@ -136,8 +136,8 @@ object PlayerTests {
    [info] Score 13  Games: 26  Percent:  2.6%  Cum: 82.5%
    [info] Score 14  Games: 23  Percent:  2.3%  Cum: 79.9%
    [info] Score 15  Games: 15  Percent:  1.5%  Cum: 77.6%
-   [info] Score 16  Games: 30  Percent:  3.0%  Cum: 76.1%
-   [info] Score 17  Games: 18  Percent:  1.8%  Cum: 73.1%
+   [info] Score 16  Games: 31  Percent:  3.1%  Cum: 76.1%
+   [info] Score 17  Games: 17  Percent:  1.7%  Cum: 73.0%
    [info] Score 18  Games: 24  Percent:  2.4%  Cum: 71.3%
    [info] Score 19  Games: 22  Percent:  2.2%  Cum: 68.9%
    [info] Score 20  Games: 18  Percent:  1.8%  Cum: 66.7%
@@ -146,8 +146,8 @@ object PlayerTests {
    [info] Score 23  Games: 39  Percent:  3.9%  Cum: 59.1%
    [info] Score 24  Games: 73  Percent:  7.3%  Cum: 55.2%
    [info] Score 25  Games: 479  Percent: 47.9%  Cum: 47.9%
-   [info] Average Score: 20.056
-   [info] Average Utility: 64.062
+   [info] Average Score: 20.055
+   [info] Average Utility: 64.06
    [info]
    [info] HeuristicStandard3P:
    [info] Score  0  Games:  0  Percent:  0.0%  Cum: 100.0%
@@ -199,17 +199,17 @@ object PlayerTests {
    [info] Score 16  Games: 38  Percent:  3.8%  Cum: 79.9%
    [info] Score 17  Games: 32  Percent:  3.2%  Cum: 76.1%
    [info] Score 18  Games: 37  Percent:  3.7%  Cum: 72.9%
-   [info] Score 19  Games: 46  Percent:  4.6%  Cum: 69.2%
-   [info] Score 20  Games: 53  Percent:  5.3%  Cum: 64.6%
-   [info] Score 21  Games: 56  Percent:  5.6%  Cum: 59.3%
-   [info] Score 22  Games: 100  Percent: 10.0%  Cum: 53.7%
-   [info] Score 23  Games: 107  Percent: 10.7%  Cum: 43.7%
-   [info] Score 24  Games: 184  Percent: 18.4%  Cum: 33.0%
+   [info] Score 19  Games: 45  Percent:  4.5%  Cum: 69.2%
+   [info] Score 20  Games: 53  Percent:  5.3%  Cum: 64.7%
+   [info] Score 21  Games: 56  Percent:  5.6%  Cum: 59.4%
+   [info] Score 22  Games: 100  Percent: 10.0%  Cum: 53.8%
+   [info] Score 23  Games: 107  Percent: 10.7%  Cum: 43.8%
+   [info] Score 24  Games: 185  Percent: 18.5%  Cum: 33.1%
    [info] Score 25  Games: 146  Percent: 14.6%  Cum: 14.6%
-   [info] Average Score: 19.781
-   [info] Average Utility: 46.862
+   [info] Average Score: 19.786
+   [info] Average Utility: 46.872
    [info]
-   [info] Time: 1514.556564551
+   [info] Time: 1479.90735122
 
    */
 
