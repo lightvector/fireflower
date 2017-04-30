@@ -402,10 +402,12 @@ class HeuristicPlayer private (
       case Some(_: JunkSet) => false
       case Some(b: PlaySequence) =>
         if(b.seqIdx <= 0) {
-          //TODO try counting as playable even if you don't have a unique card that you think it is
           val card = believedCard(cid, game, ck=false)
-          if(card == Card.NULL)
-            false
+          if(card == Card.NULL) {
+            //TODO for some reason this helps on 2p and 3p but hurts on 4p. Why?
+            if(rules.numPlayers <= 3) provablyPlayable(possibleCards(cid,ck=false),game)
+            else false
+          }
           else
             game.isPlayable(card)
         }
