@@ -738,9 +738,9 @@ class HeuristicPlayer private (
       case Some(_: ProtectedSet) => ()
       //Card was believed junk - presumably the player somehow inferred it as playable
       case Some(_: JunkSet) => ()
-      //Card was a believed play. We actually don't need to do any updates here because
-      //we later update all play sequences to remove newly provable junk cards.
-      case Some(_: PlaySequence) => ()
+      //Card was a believed play. Remove the card from the play sequence it was a part of
+      case Some(b: PlaySequence) =>
+        addBelief(PlaySequenceInfo(cids = b.info.cids.filter { c => c != cid }))
     }
   }
 
@@ -1047,7 +1047,6 @@ class HeuristicPlayer private (
                   case _ => false
                 }
               }
-              //TODO this is wrong - we might fail to filter out played cards here!
               val remainingCids = b.info.cids.filter { cid => partOfThisSequence(cid) }
               val (newCids,filteredCids) = remainingCids.partition { cid =>
                 count += 1
@@ -1063,6 +1062,12 @@ class HeuristicPlayer private (
                   }
                 }
               }
+              //TODO this is weird. We update the PlaySequence belief and filter out cids that are no longer part of the sequence
+              //only at the times where we have protected or junk card to separate out.
+              //It makes things worse on all of 2p,3p,4p to:
+              // * Always filter out cids that are no longer part of the sequence
+              // * Never filter out cids that are no longer part of the sequence.
+              //Why??
               if(filteredCids.length > 0) {
                 val (protectCids,junkCids) = filteredCids.partition { cid => !provablyJunk(possibleCards(cid,ck=true),postGame) }
                 addBelief(PlaySequenceInfo(cids = newCids))
