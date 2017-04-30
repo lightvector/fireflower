@@ -1236,7 +1236,9 @@ class HeuristicPlayer private (
         (0 until nextRoundLen).foreach { pidOffset =>
           val pid = (game.curPlayer+pidOffset) % rules.numPlayers
           var distinctKnownPlayCardsThisTurn: List[Card] = List()
-          game.hands(pid).foreach { cid =>
+          val handLen = game.hands(pid).length
+          (0 until handLen).foreach { hid =>
+            val cid = game.hands(pid)(hid)
             val card = game.seenMap(cid)
             val possibles = possibleCards(cid,ck=true)
             if(probablyCorrectlyBelievedPlayableSoon(cid,game)) {
@@ -1254,8 +1256,12 @@ class HeuristicPlayer private (
                 kp += 1.00
               }
             }
-            else if(isBelievedProtected(cid) && (card != Card.NULL && game.isDangerous(card)))
-              gk += 0.20 / 0.85
+            else if(isBelievedProtected(cid) && (card != Card.NULL && game.isDangerous(card))) {
+              //Protection at end of hand more efficient than other protection which could be deferred
+              //TODO is this really bad for 3 players or is it just overfitting to the test games?
+              if(hid == handLen-1 && rules.numPlayers != 3) gk += 0.35 / 0.85
+              else gk += 0.20 / 0.85
+            }
             else if(isBelievedProtected(cid) && (card != Card.NULL && game.isPlayable(card)))
               gk += 0.10 / 0.85
 
