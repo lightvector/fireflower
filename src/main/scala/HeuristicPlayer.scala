@@ -643,15 +643,24 @@ class HeuristicPlayer private (
           }
 
           def markPlayable(targetCid: CardId): Unit = {
-            primeBelief(cid) match {
-              //If old card was part of a sequence, then the new card is part of that sequence.
-              case Some(PlaySequence(seqIdx,info)) =>
-                val cids = info.cids.clone
-                cids(seqIdx) = targetCid
-                addBelief(PlaySequenceInfo(cids))
-              //Otherwise the new card is simply thought playable
-              case _ =>
-                addBelief(PlaySequenceInfo(cids = Array(cid)))
+            //If the targeted card is already playable now, then do nothing
+            val alreadyBelievedPlayableNow = {
+              primeBelief(targetCid) match {
+                case Some(PlaySequence(0,_)) => true
+                case _ => false
+              }
+            }
+            if(!alreadyBelievedPlayableNow) {
+              primeBelief(cid) match {
+                //If old card was part of a sequence, then the new card is part of that sequence.
+                case Some(PlaySequence(seqIdx,info)) =>
+                  val cids = info.cids.clone
+                  cids(seqIdx) = targetCid
+                  addBelief(PlaySequenceInfo(cids))
+                //Otherwise the new card is simply thought playable
+                case _ =>
+                  addBelief(PlaySequenceInfo(cids = Array(cid)))
+              }
             }
           }
 
@@ -1038,6 +1047,7 @@ class HeuristicPlayer private (
                   case _ => false
                 }
               }
+              //TODO this is wrong - we might fail to filter out played cards here!
               val remainingCids = b.info.cids.filter { cid => partOfThisSequence(cid) }
               val (newCids,filteredCids) = remainingCids.partition { cid =>
                 count += 1
