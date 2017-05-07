@@ -841,10 +841,11 @@ class HeuristicPlayer private (
           earlierPlayCid match {
             case None => ()
             case Some(earlierPlayCid) =>
-              primeBelief(cid) match {
+              primeBelief(earlierPlayCid) match {
                 case Some(b: PlaySequence) =>
                   val info = b.info
-                  addBelief(PlaySequenceInfo(cids = info.cids :+ cid))
+                  val cidsOfSameColor = info.cids.filter { c => c == earlierPlayCid || color == uniquePossibleUsefulColor(c, postGame, ck=true) }
+                  addBelief(PlaySequenceInfo(cids = cidsOfSameColor :+ cid))
                   keep = false
                 case _ =>
                   addBelief(PlaySequenceInfo(cids = Array(earlierPlayCid,cid)))
