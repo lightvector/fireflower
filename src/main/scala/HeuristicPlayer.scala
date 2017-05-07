@@ -1451,30 +1451,51 @@ class HeuristicPlayer private (
       //Penalize if the player next to move is possibly about to just lose the game.
       val nextTurnLossFactor = {
         val pid = game.curPlayer
-        //Minor optimization - we never know if we're about to lose the game by our own discard
-        //Or if discarding is not possible.
-        //TODO restricting to < 1 hint right now because if we do more, then the bot wrongly evals many actions
+        //TODO restricting all these to < 1 hint right now because if we do more, then the bot wrongly evals many actions
         //because likelyActionsSimple isn't great and often allows us to end up in this kind of situation when in reality
         //that next player would prevent this. Restricting to low hints limits to cases where this is less likely to miseval.
-        if(pid == myPid || game.numHints >= rules.maxHints || game.numDiscarded >= rules.maxDiscards || game.numHints > 1)
-          1.0
-        else {
-          val (hid,dg) = mostLikelyDiscard(pid, game, ck=true)
-          val cid = game.hands(pid)(hid)
-          val aboutToLose = {
-            !isBelievedProtected(cid) &&
-            provablyDangerous(possibleCards(cid,ck=false),game) &&
-            dg >= DISCARD_REGULAR &&
-            expectedPlays(pid, game, now=true, ck=false).isEmpty
-          }
-          if(!aboutToLose) 1.00
+        val dueToDiscardFactor = {
+          if(pid == myPid || game.numHints >= rules.maxHints || game.numDiscarded >= rules.maxDiscards || game.numHints > 1)
+            1.0
           else {
-            if(game.numHints <= 0) 0.80
-            else 0.90
+            val (hid,dg) = mostLikelyDiscard(pid, game, ck=true)
+            val cid = game.hands(pid)(hid)
+            val aboutToLose = {
+              !isBelievedProtected(cid) &&
+              provablyDangerous(possibleCards(cid,ck=false),game) &&
+              dg >= DISCARD_REGULAR &&
+              //TODO try ck=false here
+              expectedPlays(pid, game, now=true, ck=false).isEmpty
+            }
+            if(!aboutToLose) 1.00
+            else {
+              if(game.numHints <= 0) 0.80
+              else 0.90
+            }
           }
         }
+        val dueToBombFactor = {
+          if(pid == myPid || game.numHints > 1)
+            1.0
+          else {
+            val plays = expectedPlays(pid, game, now=true, ck=true)
+            val aboutToLose =
+              plays.exists { hid =>
+                val cid = game.hands(pid)(hid)
+                val possibles = possibleCards(cid,ck=false)
+                provablyNotPlayable(possibles,game) && (bombsLeft <= 1 || provablyDangerous(possibles,game))
+              }
+            if(!aboutToLose) 1.0
+            else {
+              val factorLoss = if(game.numHints <= 0) 0.20 else 0.10
+              1.0 - factorLoss / plays.length
+            }
+          }
+        }
+
+        dueToDiscardFactor * dueToBombFactor
       }
-      //Penalize if the current player has 0 hints and the next player's MLD is scary and not known to be scary.
+
       val fewHintsFactor = {
         val nextPid = (game.curPlayer + 1) % rules.numPlayers
         val cantProtectDanger = {
