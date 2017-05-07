@@ -1498,19 +1498,42 @@ class HeuristicPlayer private (
 
       val fewHintsFactor = {
         val nextPid = (game.curPlayer + 1) % rules.numPlayers
-        val cantProtectDanger = {
-          (game.numHints == 0 && game.numDiscarded < rules.maxDiscards && nextPid != myPid) && {
-            val (hid,_) = mostLikelyDiscard(nextPid, game, ck=true)
-            val cid = game.hands(nextPid)(hid)
-            !isBelievedProtected(cid) &&
-            provablyDangerous(possibleCards(cid,ck=false),game) &&
-            //Ideally should be now=true, but the problem is that we want to not penalize the case
-            //where the next player has no playables but the current player has a playable that makes
-            //the next player have a playable!
-            expectedPlays(nextPid, game, now=false, ck=false).isEmpty
+        //Penalize if the current player has 0 hints and the next player's MLD is scary and not known to be scary.
+        val cantProtectDangerFactor = {
+          val cantProtectDanger = {
+            (game.numHints == 0 && game.numDiscarded < rules.maxDiscards && nextPid != myPid) && {
+              val (hid,_) = mostLikelyDiscard(nextPid, game, ck=true)
+              val cid = game.hands(nextPid)(hid)
+              !isBelievedProtected(cid) &&
+              provablyDangerous(possibleCards(cid,ck=false),game) &&
+              //Ideally should be now=true, but the problem is that we want to not penalize the case
+              //where the next player has no playables but the current player has a playable that makes
+              //the next player have a playable!
+              expectedPlays(nextPid, game, now=false, ck=false).isEmpty
+            }
+          }
+          if(cantProtectDanger) 0.85
+          else 1.0
+        }
+        //Penalize if the current player has 0 hints and the next player is about to bomb and lose the game
+        val cantAvoidBombLossFactor = {
+          if(game.numHints > 0 || nextPid == myPid) 1.0
+          else {
+            val plays = expectedPlays(nextPid, game, now=true, ck=true)
+            val cantAvoidBombLoss = {
+              plays.exists { hid =>
+                val cid = game.hands(nextPid)(hid)
+                val possibles = possibleCards(cid,ck=false)
+                provablyNotPlayable(possibles,game) && (bombsLeft <= 1 || provablyDangerous(possibles,game))
+              }
+            }
+            if(cantAvoidBombLoss) 1.0 - (0.15 / plays.length)
+            else 1.0
           }
         }
-        if(cantProtectDanger) 0.85
+
+        // if(cantProtectDangerFactor < 1.0) cantProtectDangerFactor
+        if(cantProtectDangerFactor < 1.0 || cantAvoidBombLossFactor < 1.0) cantProtectDangerFactor * cantAvoidBombLossFactor
         //TODO why does this hurt 3 player?
         else if(game.numHints == 0 && rules.numPlayers != 3) 0.98
         else 1.00
