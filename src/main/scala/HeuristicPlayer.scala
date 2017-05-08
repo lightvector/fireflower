@@ -165,6 +165,17 @@ class HeuristicPlayer private (
     (0 until rules.numPlayers).foreach { pid =>
       game.hands(pid).foreach { cid => seenMapCK(cid) = Card.NULL }
     }
+
+    //Apply one pass where we treat provable cards as themselves seen so that
+    //we can deduce further cards.
+    (0 until rules.numPlayers).foreach { pid =>
+      game.hands(pid).foreach { cid =>
+        val ckCard = uniquePossible(cid,ck=true)
+        if(ckCard != Card.NULL) seenMapCK(cid) = ckCard
+        val card = uniquePossible(cid,ck=false)
+        if(card != Card.NULL) seenMap(cid) = card
+      }
+    }
   }
 
   //Add a belief via its shared info, computing the per-card values to store
@@ -186,9 +197,6 @@ class HeuristicPlayer private (
   def allHintsConsistent(cid: CardId, card: Card): Boolean = {
     hintedMap(cid).forall { hinted => rules.isConsistent(hinted.info.sh.hint, hinted.applied, card) }
   }
-
-  //TODO once it becomes CK about a card's exact identity, it should no longer be part of sm.filterDistinctUnseen
-  //so that we can infer things based on non-seen but CK known cards.
 
   //TODO this function is called frequently!
   //Maybe we can memoize it - might be a decent speedup.
