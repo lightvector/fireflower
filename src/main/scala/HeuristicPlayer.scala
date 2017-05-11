@@ -347,35 +347,38 @@ class HeuristicPlayer private (
             sm.filterUniqueDistinctUnseen { card => allHintsConsistent(cid,card) && game.isPlayable(card) }
           //Believed playable later
           else {
-            Card.NULL
-            //TODO see whether this logic makes it better
-            // val possibles = sm.filterDistinctUnseen { card => allHintsConsistent(cid,card) && game.isUseful(card) }
-            // possibles match {
-            //   case Nil => Card.NULL
-            //   case head :: tail =>
-            //     //If this card must be a certain color...
-            //     if(tail.forall { card => card.color == head.color }) {
-            //       val color = head.color
-            //       //Check all earlier cards to count and see which this could be
-            //       var simulatedNextPlayable = game.nextPlayable(color.id)
-            //       def loop(seqIdx:Int): Card = {
-            //         if(seqIdx >= b.seqIdx)
-            //           possibles.find { card => card.number == simulatedNextPlayable }.getOrElse(Card.NULL)
-            //         else {
-            //           val card = sm.filterUniqueDistinctUnseen { card => allHintsConsistent(cid,card) && card.color == color && card.number == simulatedNextPlayable }
-            //           if(card == Card.NULL)
-            //             loop(seqIdx + 1)
-            //           else {
-            //             simulatedNextPlayable += 1
-            //             loop(seqIdx + 1)
-            //           }
-            //         }
-            //       }
-            //       loop(0)
-            //     }
-            //     //If it doesn't have to be a certain color, we have no idea
-            //     else Card.NULL
-            // }
+            //TODO why is this worse for 3p and 4p?
+            if(rules.numPlayers > 2)
+              Card.NULL
+            else {
+              val possibles = sm.filterDistinctUnseen { card => allHintsConsistent(cid,card) && game.isUseful(card) }
+              possibles match {
+                case Nil => Card.NULL
+                case head :: tail =>
+                  //If this card must be a certain color...
+                  if(tail.forall { card => card.color == head.color }) {
+                    val color = head.color
+                    //Check all earlier cards to count and see which this could be
+                    var simulatedNextPlayable = game.nextPlayable(color.id)
+                    def loop(seqIdx:Int): Card = {
+                      if(seqIdx >= b.seqIdx)
+                        possibles.find { card => card.number == simulatedNextPlayable }.getOrElse(Card.NULL)
+                      else {
+                        val card = sm.filterUniqueDistinctUnseen { card => allHintsConsistent(cid,card) && card.color == color && card.number == simulatedNextPlayable }
+                        if(card == Card.NULL)
+                          loop(seqIdx + 1)
+                        else {
+                          simulatedNextPlayable += 1
+                          loop(seqIdx + 1)
+                        }
+                      }
+                    }
+                    loop(0)
+                  }
+                  //If it doesn't have to be a certain color, we have no idea
+                  else Card.NULL
+              }
+            }
           }
       }
     }
