@@ -52,15 +52,17 @@ case class ProtectedSet(seqIdx: Int, info: ProtectedSetInfo) extends Belief
 case class JunkSetInfo(cids: Array[CardId]) extends BeliefInfo
 case class JunkSet(seqIdx: Int, info: JunkSetInfo) extends Belief
 
-//One is created every time someone discards, recording the state of the game when they did so.
-case class DiscardSnapshot(
+//One is created every time someone plays or discards, recording the state of the game when they did so.
+case class DPSnapshot(
   pid: PlayerId,
+  turnNumber: Int,
   postHands: Array[Hand],
   postHints: Int,
   nextPlayable: Array[Number],
   preDangers: Array[Card],
   nextPidExpectedPlaysNow: List[HandId],
-  nextPidMostLikelyDiscard: HandId
+  nextPidMostLikelyDiscard: HandId,
+  isFromPlay: Boolean
 )
 
 //Basic constructors and other static functions for the player
@@ -84,7 +86,7 @@ object HeuristicPlayer extends PlayerGen {
       seenMapCK = SeenMap.empty(rules),
       hintedMap = CardPropertyMap(rules),
       beliefMap = CardPropertyMap(rules),
-      discardSnapshots = List()
+      dpSnapshots = List()
     )
   }
 
@@ -101,7 +103,7 @@ case class SavedState(
   val seenMapCK: SeenMap,
   val hintedMap: CardPropertyMap[Hinted],
   val beliefMap: CardPropertyMap[Belief],
-  val discardSnapshots: List[DiscardSnapshot]
+  val dpSnapshots: List[DPSnapshot]
 )
 
 class HeuristicPlayer private (
@@ -130,7 +132,7 @@ class HeuristicPlayer private (
   //private information because it's used to predict other players' actions.
   val beliefMap: CardPropertyMap[Belief],
   //Snapshots of past states of the game when people discarded.
-  var discardSnapshots: List[DiscardSnapshot]
+  var dpSnapshots: List[DPSnapshot]
 ) extends Player {
 
   def saveState(): SavedState = {
@@ -139,7 +141,7 @@ class HeuristicPlayer private (
       seenMapCK = SeenMap(seenMapCK),
       hintedMap = CardPropertyMap(hintedMap),
       beliefMap = CardPropertyMap(beliefMap),
-      discardSnapshots = discardSnapshots
+      dpSnapshots = dpSnapshots
     )
   }
   def restoreState(saved: SavedState): Unit = {
@@ -147,7 +149,7 @@ class HeuristicPlayer private (
     saved.seenMapCK.copyTo(seenMapCK)
     saved.hintedMap.copyTo(hintedMap)
     saved.beliefMap.copyTo(beliefMap)
-    discardSnapshots = saved.discardSnapshots
+    dpSnapshots = saved.dpSnapshots
   }
 
   //Checks whether the current game state is one where we should be printing debug messages.
@@ -460,7 +462,7 @@ class HeuristicPlayer private (
   def cardIsNew(pid: PlayerId, cid: CardId, minPostHints: Int) = {
     //Find the most recent instance where someone other than the player who holds the card
     //discarded with many hints left
-    val ds = discardSnapshots.find { ds => ds.postHints >= 3 && ds.pid != pid }
+    val ds = dpSnapshots.find { ds => ds.postHints >= 3 && ds.pid != pid && !ds.isFromPlay}
     ds.forall { ds => !ds.postHands(pid).contains(cid) }
   }
 
@@ -717,24 +719,29 @@ class HeuristicPlayer private (
     }
 
     //Make a new snapshot
-    val newDiscardSnapshot = {
-      DiscardSnapshot(
+    val newDPSnapshot = {
+      DPSnapshot(
         pid = discardPid,
+        turnNumber = preGame.turnNumber,
         postHands = postGame.hands.map { hand => Hand(hand) },
         postHints = postGame.numHints,
         nextPlayable = postGame.nextPlayable.clone(),
         preDangers = preDangers,
         //TODO these make things quite a bit slower, any way to speed up?
         nextPidExpectedPlaysNow = expectedPlays(postGame.curPlayer,postGame,now=true,ck=true),
-        nextPidMostLikelyDiscard
+        nextPidMostLikelyDiscard,
+        isFromPlay = false
       )
     }
-    discardSnapshots = newDiscardSnapshot :: discardSnapshots
+    dpSnapshots = newDPSnapshot :: dpSnapshots
   }
 
   //Handle a play that we've seen, updating info and beliefmaps.
   //Assumes seenMap is already updated, but nothing else.
-  def handleSeenPlay(sp: SeenPlay, postGame: Game): Unit = {
+  def handleSeenPlay(sp: SeenPlay, preGame: Game, postGame: Game): Unit = {
+    val playPid = preGame.curPlayer
+    val preDangers = seenMapCK.filterDistinctUnseen { card => preGame.isDangerous(card) }.toArray
+
     val cid = sp.cid
     updateSeenMap(postGame)
 
@@ -750,6 +757,25 @@ class HeuristicPlayer private (
       case Some(b: PlaySequence) =>
         addBelief(PlaySequenceInfo(cids = b.info.cids.filter { c => c != cid }))
     }
+
+    //Make a new snapshot
+    val nextPidMostLikelyDiscard = mostLikelyDiscard(postGame.curPlayer,postGame,ck=true)._1
+    val newDPSnapshot = {
+      DPSnapshot(
+        pid = playPid,
+        turnNumber = preGame.turnNumber,
+        postHands = postGame.hands.map { hand => Hand(hand) },
+        postHints = postGame.numHints,
+        nextPlayable = postGame.nextPlayable.clone(),
+        preDangers = preDangers,
+        //TODO these make things quite a bit slower, any way to speed up?
+        nextPidExpectedPlaysNow = expectedPlays(postGame.curPlayer,postGame,now=true,ck=true),
+        nextPidMostLikelyDiscard,
+        isFromPlay = true
+      )
+    }
+    dpSnapshots = newDPSnapshot :: dpSnapshots
+
   }
 
   def handleSeenBomb(sb: SeenBomb, preGame: Game, postGame: Game): Unit = {
@@ -881,26 +907,29 @@ class HeuristicPlayer private (
       }
     }
 
-    //MLD was hinted and it had no prior belief, but an earlier discard snapshot indicates it's safe
-    val mldSuggestedButSafeDueToDiscard = {
+    //MLD was hinted and it had no prior belief, but an earlier discard or play snapshot indicates it's safe
+    val mldSuggestedButSafeDueToDiscardOrPlay = {
       suggestsMLDPossibleDanger &&
       primeBelief(hand(preMLD)).isEmpty && {
-        //Player immediately before the hinted player discarded and failed to stop us from discarding?
+        //Player immediately before the hinted player failed to take the relevant action
         val beforePid = (pid + rules.numPlayers - 1) % rules.numPlayers
-        val ds = discardSnapshots.find { ds => ds.postHints >= 3 && ds.postHints < rules.maxHints && ds.pid == beforePid }
+        def dpSnapshotOkay(ds: DPSnapshot): Boolean = {
+          //There was no card we were expected to play, and the same card was our MLD at the time as well.
+          ds.nextPidExpectedPlaysNow.isEmpty &&
+          ds.postHands(pid)(ds.nextPidMostLikelyDiscard) == hand(preMLD) &&
+          {
+            //There is no possible card for mld that became dangerous in the meantime
+            val dangerNow = seenMapCK.filterDistinctUnseen { card => postGame.isDangerous(card) }.toArray
+            !(possibleCards(hand(preMLD),ck=true).exists { card =>
+              dangerNow.contains(card) && !ds.preDangers.contains(card)
+            })
+          }
+        }
+
+        val ds = dpSnapshots.find { ds => ds.postHints >= 3 && ds.postHints < rules.maxHints && ds.pid == beforePid }
         ds match {
           case None => false
-          case Some(ds) =>
-            //There was no card we were expected to play, and the same card was our MLD at the time as well.
-            ds.nextPidExpectedPlaysNow.isEmpty &&
-            ds.postHands(pid)(ds.nextPidMostLikelyDiscard) == hand(preMLD) &&
-            {
-              //There is no possible card for mld that became dangerous in the meantime
-              val dangerNow = seenMapCK.filterDistinctUnseen { card => postGame.isDangerous(card) }.toArray
-              !(possibleCards(hand(preMLD),ck=true).exists { card =>
-                dangerNow.contains(card) && !ds.preDangers.contains(card)
-              })
-            }
+          case Some(ds) => dpSnapshotOkay(ds)
         }
       }
     }
@@ -918,7 +947,7 @@ class HeuristicPlayer private (
       } && {
         //Suggests the MLD but a discard snapshot makes it safe, and there's no other reason we should
         //interpret this hint as protection
-        (mldSuggestedButSafeDueToDiscard && !provesPlayNowAsDanger) || {
+        (mldSuggestedButSafeDueToDiscardOrPlay && !provesPlayNowAsDanger) || {
           //Number-and-color-specific rules
           sh.hint match {
             case HintNumber(num) =>
@@ -1609,7 +1638,7 @@ class HeuristicPlayer private (
       case (sd: SeenDiscard) =>
         handleSeenDiscard(sd,preGame,postGame)
       case (sp: SeenPlay) =>
-        handleSeenPlay(sp,postGame)
+        handleSeenPlay(sp,preGame,postGame)
       case (sb: SeenBomb) =>
         handleSeenBomb(sb,preGame,postGame)
       case (sh: SeenHint) =>
@@ -1705,6 +1734,7 @@ class HeuristicPlayer private (
     weightedAverage(nextActions) { (nextAction,prob) =>
       val eval = tryAction(game,nextAction,List(),prob,cDepth,rDepth,saved)
       if(debugging(game)) {
+        maybePrintAllBeliefs(game)
         println("Likely next: %-12s Weight: %.2f Eval: %s".format(
           game.giveActionToString(nextAction),
           prob,
