@@ -1316,10 +1316,11 @@ class HeuristicPlayer private (
         (kp,gk)
       }
 
-      //TODO not sure why we can't count a known play as more than 0.1625 of an actual play.
+      //TODO not sure why we can't count a known play more.
       //Increasing this makes things worse!
-      val numHintedOrPlayed = numPlayed + knownPlays * 0.1625
-      val numRemainingToHint = maxPlaysLeft - knownPlays * 0.1625
+      val knownPlayValue = if(rules.numPlayers <= 2) 0.20 else  0.1625
+      val numHintedOrPlayed = numPlayed + knownPlays * knownPlayValue
+      val numRemainingToHint = maxPlaysLeft - knownPlays * knownPlayValue
       val netFreeHints = (numPotentialHints - fixupHintsRequired + goodKnowledge) * 0.85  - numRemainingToHint - 3.0
 
       //How many plays we have or expect to be able to hint in the future.
