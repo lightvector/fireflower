@@ -1158,10 +1158,7 @@ class HeuristicPlayer private (
 
   def staticEvalGame(game: Game): Double = {
     if(game.isDone()) {
-      if(rules.stopEarlyLoss)
-        transformEval(game.numPlayed.toDouble)
-      else
-        transformEval(game.numPlayed.toDouble - scoreDropPerLostPoint * (rules.maxScore - game.numPlayed))
+      transformEval(game.numPlayed.toDouble - scoreDropPerLostPoint * (rules.maxScore - game.numPlayed))
     }
     else {
       //PRELIMARIES-----------------------------------------------------------------------------------------
@@ -1593,10 +1590,7 @@ class HeuristicPlayer private (
         fewHintsFactor
       }
       val raw = {
-        if(rules.stopEarlyLoss)
-          numPlayed + maxPlaysLeft * totalFactor
-        else
-          numPlayed + maxPlaysLeft * totalFactor - scoreDropPerLostPoint * provableLossBy
+        numPlayed + maxPlaysLeft * totalFactor - scoreDropPerLostPoint * provableLossBy
       }
 
       val eval = transformEval(raw)
