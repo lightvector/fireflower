@@ -25,8 +25,8 @@ sealed trait BeliefInfo
 sealed trait Belief {
   override def toString(): String = {
     this match {
-      case PlaySequence(seqIdx,info) =>
-        "PlaySequence(seqIdx=" + seqIdx + ",cids=(" + info.cids.mkString(",") + "))"
+      case PlaySequence(seqIdx,finesseCard,info) =>
+        "PlaySequence(seqIdx=" + seqIdx + ",finesse=" + finesseCard + "cids=(" + info.cids.mkString(",") + "))"
       case ProtectedSet(seqIdx,info) =>
         "ProtectedSet(seqIdx=" + seqIdx + ",cids=(" + info.cids.mkString(",") + "))"
       case JunkSet(seqIdx,info) =>
@@ -42,7 +42,7 @@ case class Hinted(hid: HandId, applied: Boolean, info: HintedInfo)
 //We think the following cards are playable
 //and should be played in this order. Possibly includes cards in other player's hands.
 case class PlaySequenceInfo(cids: Array[CardId]) extends BeliefInfo
-case class PlaySequence(seqIdx: Int, info: PlaySequenceInfo) extends Belief
+case class PlaySequence(seqIdx: Int, finesseCard: Option[Card], info: PlaySequenceInfo) extends Belief
 
 //We think that these cards are protected and should be held onto and not discarded
 case class ProtectedSetInfo(cids: Array[CardId]) extends BeliefInfo
@@ -67,6 +67,8 @@ case class DPSnapshot(
 
 //Basic constructors and other static functions for the player
 object HeuristicPlayer extends PlayerGen {
+
+  val ENABLE_FINESSE = true
 
   //Construct a HeuristicPlayer for the given rule set
   def apply(rules: Rules, myPid: Int): HeuristicPlayer = {
@@ -184,14 +186,56 @@ class HeuristicPlayer private (
   def addBelief(info: BeliefInfo): Unit = {
     info match {
       case (info:PlaySequenceInfo) =>
-        for(i <- 0 until info.cids.length)
-          beliefMap.add(info.cids(i),PlaySequence(seqIdx=i,info=info))
+        for(i <- 0 until info.cids.length) {
+          //Preserve finesse cards
+          val cid = info.cids(i)
+          val finesseCard = getFinesseCard(cid)
+          beliefMap.add(cid,PlaySequence(seqIdx=i,finesseCard=finesseCard,info=info))
+        }
       case (info:ProtectedSetInfo) =>
         for(i <- 0 until info.cids.length)
           beliefMap.add(info.cids(i),ProtectedSet(seqIdx=i,info=info))
       case (info:JunkSetInfo) =>
         for(i <- 0 until info.cids.length)
           beliefMap.add(info.cids(i),JunkSet(seqIdx=i,info=info))
+    }
+  }
+
+  //Add a finesse belief for a given card
+  def addFinesse(targetCid: CardId, baseCid: CardId, finesseCard: Card): Unit = {
+    primeBelief(baseCid) match {
+      case Some(b: PlaySequence) =>
+        val seqIdx = b.seqIdx
+        val cids: Array[CardId] = b.info.cids.take(seqIdx) ++ Array(targetCid) ++ b.info.cids.drop(seqIdx)
+        val info = PlaySequenceInfo(cids)
+        addBelief(info)
+        //Replace the top info of the target itself to have a finesse card
+        beliefMap.pop(targetCid)
+        beliefMap.add(targetCid,PlaySequence(seqIdx=seqIdx,finesseCard=Some(finesseCard),info=info))
+      case Some(_) | None =>
+        val cids = Array(targetCid)
+        val info = PlaySequenceInfo(cids)
+        beliefMap.add(targetCid,PlaySequence(seqIdx=0,finesseCard=Some(finesseCard),info=info))
+    }
+  }
+
+  //Remove all beliefs that have this card as a finesse playable now, exposing any underneath
+  def removePlayableFinesseBeliefs(game: Game, cid: CardId): Unit = {
+    primeBelief(cid) match {
+      case Some(b: PlaySequence) =>
+        b.finesseCard match {
+          case None => ()
+          case Some(card) =>
+            if(game.isPlayable(card)) {
+              //Remove belief from this card
+              beliefMap.pop(cid)
+              //Also adjust from the sequence for other cards
+              addBelief(PlaySequenceInfo(cids = b.info.cids.filter { c => c != cid }))
+              //And repeat until there are no more
+              removePlayableFinesseBeliefs(game,cid)
+            }
+        }
+      case Some(_) | None => ()
     }
   }
 
@@ -325,6 +369,15 @@ class HeuristicPlayer private (
       case Some(_: ProtectedSet) => false
       case Some(_: PlaySequence) => false
       case Some(_: JunkSet) => true
+    }
+  }
+
+  def getFinesseCard(cid: CardId): Option[Card] = {
+    primeBelief(cid) match {
+      case Some(b:PlaySequence) => b.finesseCard
+      case Some(_:ProtectedSet) => None
+      case Some(_: JunkSet) => None
+      case None => None
     }
   }
 
@@ -576,6 +629,58 @@ class HeuristicPlayer private (
     game.hands(pid).findIdx { cid => !provablyNotPlayable(possibleCards(cid,ck),game) }
   }
 
+  //When a hint affects multiple cards to imply a finesse, which of the hinted cards should the finesse
+  //be based off of?
+  def finesseBase(game: Game, hintCids: Array[CardId]): Option[CardId] = {
+    //If there is an ck-exactly-known card that is 1 step from playable, then that one.
+    hintCids.find { cid => uniquePossible(cid,ck=true) != Card.NULL && game.isOneFromPlayable(seenMap(cid)) } match {
+      case Some(cid) => Some(cid)
+      case None =>
+        //Otherwise the first card that could be one step from playable, if it actually is.
+        hintCids.find { cid => possibleCards(cid,ck=true).exists { card => game.isOneFromPlayable(card) } } match {
+          case Some(cid) => if(game.isOneFromPlayable(seenMap(cid))) Some(cid) else None
+          case None => None
+        }
+    }
+  }
+
+  def isGoodForFinesse(game: Game, card: Card, baseCard: Card): Boolean = {
+    card.color == baseCard.color && card.number == baseCard.number - 1 && game.isUseful(card)
+  }
+
+  //Given that the given Card was hinted from someone else's hand, assuming it's a finesse targeting pid,
+  //what's the card their hand they should play according to common knowledge?
+  def finesseTarget(game: Game, pid: PlayerId, baseCard: Card): Option[CardId] = {
+
+    //For simplicity, there are no finesse targets if the player has a card that they think could be it but
+    //is already part of a play sequence.
+    val matchesPlay = {
+      game.hands(pid).exists { cid => primeBelief(cid) match {
+        case Some(b:PlaySequence) => possibleCards(cid,ck=true).exists { card => (b.seqIdx > 0 || game.isPlayable(card)) && isGoodForFinesse(game,card,baseCard) }
+        case Some(_:ProtectedSet) | Some(_:JunkSet) | None => false
+      }}
+    }
+    if(matchesPlay)
+      None
+    else {
+      //Otherwise, first prefer all cards that have been protected. Then any non-junk cards.
+      val protectedMatch = {
+        game.hands(pid).find { cid => primeBelief(cid) match {
+          case Some(_:ProtectedSet) => possibleCards(cid,ck=true).exists { card => isGoodForFinesse(game,card,baseCard) }
+          case Some(_:PlaySequence) | Some(_:JunkSet) | None => false
+        }}
+      }
+      protectedMatch match {
+        case Some(cid) => Some(cid)
+        case None =>
+          game.hands(pid).find { cid => primeBelief(cid) match {
+            case None => possibleCards(cid,ck=true).exists { card => isGoodForFinesse(game,card,baseCard) }
+            case Some(_) => false
+          }}
+      }
+    }
+  }
+
   //Handle a discard that we've seen, updating info and beliefmaps.
   //Assumes seenMap is already updated, but nothing else.
   def handleSeenDiscard(sd: SeenDiscard, preGame: Game, postGame: Game): Unit = {
@@ -595,7 +700,7 @@ class HeuristicPlayer private (
 
     //If a card discarded is part of a play sequence and had it been played it would have proven subsequent
     //cards in the sequence to be unplayable, go ahead and mark them as protected or junk as appropriate.
-    //This is possible in the rare cases where a play gets discarded such as in a finesse. In the case where
+    //This is possible in the rare cases where a play gets discarded. In the case where
     //it actually does get played, we don't need a special case because simplifyBeliefs will do this updating
     //of the remaining cards in sequence.
     primeBelief(cid) match {
@@ -624,11 +729,14 @@ class HeuristicPlayer private (
         }
     }
 
-    //Discard finesse based on if the discard if the discard was of an expected play
+    //Discard convention based on if the discard if the discard was of an expected play
     if(card != Card.NULL && preExpectedPlaysNow.contains(sd.hid)) {
+      //Disallow discard convention from applying to throwing away finessed cards
+      val wasFromFinesse = getFinesseCard(cid).nonEmpty
+
       //TODO maybe also check that it was NOT the most likely discard?
       //TODO this massively hurts playing strength on 4 player. Why?
-      if(rules.numPlayers <= 3) {
+      if(rules.numPlayers <= 3 && !wasFromFinesse) {
         //It's a hint about a playable duplicate of what that player believed that card could be.
         val prePossiblesPlayable = prePossibles.filter { card => postGame.isPlayable(card) }
         if(prePossiblesPlayable.nonEmpty) {
@@ -659,14 +767,14 @@ class HeuristicPlayer private (
             //If the targeted card is already playable now, then do nothing
             val alreadyBelievedPlayableNow = {
               primeBelief(targetCid) match {
-                case Some(PlaySequence(0,_)) => true
+                case Some(PlaySequence(0,_,_)) => true
                 case _ => false
               }
             }
             if(!alreadyBelievedPlayableNow) {
               primeBelief(cid) match {
                 //If old card was part of a sequence, then the new card is part of that sequence.
-                case Some(PlaySequence(seqIdx,info)) =>
+                case Some(PlaySequence(seqIdx,_finesseCard,info)) =>
                   val cids = info.cids.clone
                   cids(seqIdx) = targetCid
                   addBelief(PlaySequenceInfo(cids))
@@ -824,10 +932,6 @@ class HeuristicPlayer private (
         }
     }
   }
-
-  //TODO some big items not yet implemented!
-  // - finesses/crossovers (for 3p and higher)
-  // - protected two green cards with "G", green 2 out. Then hint the first one as 4 - should play the second then the first.
 
   //Handle a hint that we've seen, updating info and beliefmaps.
   //Assumes seenMap is already updated, but nothing else.
@@ -998,6 +1102,8 @@ class HeuristicPlayer private (
       }
     }
 
+    var couldBeFinesse = false
+
     //If this hint is an unknown hint, it does nothing
     if(sh.hint == UnknownHint)
     {}
@@ -1021,6 +1127,7 @@ class HeuristicPlayer private (
       //Split out any cards that should belong to other play sequences
       val hintCidsNotProvable2 = chainAndFilterFuturePlays(hintCidsNotProvable)
       addBelief(PlaySequenceInfo(cids = hintCidsProvable ++ hintCidsNotProvable2))
+      couldBeFinesse = true
     }
     //Otherwise if all cards in the hint are provably unplayable and not provably junk
     else if(hintCids.forall { cid =>
@@ -1031,6 +1138,7 @@ class HeuristicPlayer private (
       val leftoverCids = chainAndFilterFuturePlays(hintCids)
       //Anything remaining treat as protected
       addBelief(ProtectedSetInfo(cids = leftoverCids))
+      couldBeFinesse = true
     }
     //Otherwise if all cards in the hint are provably junk, then it's a protection hint
     //to all older cards that are not provably junk older than the oldest in the hint
@@ -1043,10 +1151,69 @@ class HeuristicPlayer private (
       val protectedCids = ((oldestHintHid+1) until sh.appliedTo.length).map { hid => postGame.hands(pid)(hid) }
       addBelief(ProtectedSetInfo(cids = protectedCids.toArray))
     }
+
+    //Finesses!
+    if(HeuristicPlayer.ENABLE_FINESSE && pid != postGame.curPlayer && pid != myPid && couldBeFinesse) {
+      finesseBase(postGame,hintCids) match {
+        case None => ()
+        case Some(baseCid) =>
+          //Finesses can only apply if the baseCid is also first in its play or protected sequence
+          val firstInSequence = {
+            primeBelief(baseCid) match {
+              case None => false
+              case Some(_: JunkSet) => false
+              case Some(b: ProtectedSet) => b.seqIdx == 0
+              case Some(b: PlaySequence) => b.seqIdx == 0
+            }
+          }
+
+          if(firstInSequence) {
+            val baseCard = seenMap(baseCid)
+            assert(baseCard != Card.NULL && baseCard.number > 0)
+            val finesseCard = Card(color=baseCard.color,number=baseCard.number-1)
+
+            //Walk through all the players strictly in between the hinting player and the hinted player
+            //and get all the cards that might be targeted
+            val targetsInBetween = {
+              var cids: List[CardId] = List()
+              var pidInBetween = postGame.curPlayer
+              while(pidInBetween != pid) {
+                finesseTarget(postGame,pidInBetween,baseCard) match {
+                  case None => ()
+                  case Some(cid) => cids = cids :+ cid
+                }
+                pidInBetween = (pidInBetween + 1) % rules.numPlayers
+              }
+              cids
+            }
+
+            //Must have at most 1 target be good - finesse does nothing if multiple good targets.
+            val numGood = targetsInBetween.count { cid => seenMap(cid) != Card.NULL && isGoodForFinesse(postGame,seenMap(cid),baseCard) }
+            if(numGood <= 1) {
+              val goodTarget = targetsInBetween.find { cid => seenMap(cid) != Card.NULL && isGoodForFinesse(postGame,seenMap(cid),baseCard) }
+              goodTarget match {
+                case Some(targetCid) =>
+                  addFinesse(targetCid,baseCid,finesseCard)
+                case None =>
+                  //If there's a card in there we can't see (i.e. it targets us) then do that one.
+                  val unknownTarget = targetsInBetween.find { cid => seenMap(cid) == Card.NULL }
+                  unknownTarget match {
+                    case Some(targetCid) =>
+                      addFinesse(targetCid,baseCid,finesseCard)
+                    case None =>
+                      //No real targets at all - then everyone will assume it hits everyone, so reflect that in beliefs.
+                      targetsInBetween.foreach { targetCid => addFinesse(targetCid,baseCid,finesseCard) }
+                  }
+              }
+            }
+          }
+      }
+    }
+
   }
 
   //Simplify and prune beliefs based on actual common-knowledge observations that may contradict them.
-  def simplifyBeliefs(postGame: Game) = {
+  def simplifyBeliefs(preGame: Game, postGame: Game) = {
     //Array to avoid visiting each cid more than once
     val visited = Array.fill(rules.deckSize)(false)
     postGame.hands.foreach { hand =>
@@ -1118,6 +1285,11 @@ class HeuristicPlayer private (
           }
         }
       }
+    }
+
+    //Also remove any finesses by the player who just moved if their finesse-implied card was playable now.
+    preGame.hands(preGame.curPlayer).foreach { cid =>
+      removePlayableFinesseBeliefs(preGame,cid)
     }
   }
 
@@ -1651,7 +1823,7 @@ class HeuristicPlayer private (
 
     val consistent = checkIsConsistent(postGame)
     if(consistent)
-      simplifyBeliefs(postGame)
+      simplifyBeliefs(preGame,postGame)
     consistent
   }
 
@@ -1835,10 +2007,17 @@ class HeuristicPlayer private (
       //Right now, we only play cards we think are probably playable, so get all the possibilities
       //and filter down conditioning on the card being playable, and average over the results
       val cid = game.hands(myPid)(hid)
-      val possibles = possibleCards(cid,ck=false).filter { card => game.isPlayable(card) }
+      //If the card was from a finesse, weight that possibility very highly
+      val finesseCard = getFinesseCard(cid)
+
+      val possiblesAndWeights = possibleCards(cid,ck=false).flatMap { card =>
+        if(!game.isPlayable(card)) None
+        else if(finesseCard == Some(card)) Some((card,100.0))
+        else Some((card,1.0))
+      }
       val ga = GivePlay(hid)
 
-      val value = average(possibles) { (card,weight) =>
+      val value = weightedAverage(possiblesAndWeights) { (card,weight) =>
         tryAction(game, ga, assumingCards=List((cid,card)), weight, cDepth, rDepth, saved)
       }
       recordAction(ga,value)

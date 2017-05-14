@@ -36,6 +36,12 @@ class CardPropertyMap[T] private (
     arr(cid) = arr(cid).filterNot(f)
   }
 
+  def pop(cid: CardId): Unit = {
+    if(arr(cid).nonEmpty) {
+      arr(cid) = arr(cid).tail
+    }
+  }
+
   def remove(cid: CardId, value: T): Unit = {
     filterOut(cid) { x => x == value }
   }

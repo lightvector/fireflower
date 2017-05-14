@@ -163,7 +163,7 @@ class Game private (
     nextPlayable(card.color.id) == card.number
   }
   def isOneFromPlayable(card: Card): Boolean = {
-    nextPlayable(card.color.id) == card.number+1
+    nextPlayable(card.color.id) == card.number-1
   }
   def isUseful(card: Card): Boolean = {
     nextPlayable(card.color.id) <= card.number &&
