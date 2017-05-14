@@ -933,6 +933,67 @@ class HeuristicPlayer private (
     }
   }
 
+
+  //Finesses!
+  def applyFinesses(pid: PlayerId, postGame: Game, hintCids: Array[CardId]): Unit = {
+    if(HeuristicPlayer.ENABLE_FINESSE && pid != postGame.curPlayer && pid != myPid) {
+      finesseBase(postGame,hintCids) match {
+        case None => ()
+        case Some(baseCid) =>
+          //Finesses can only apply if the baseCid is also first in its play sequence.
+          val firstInSequence = {
+            primeBelief(baseCid) match {
+              case None => true
+              case Some(_: JunkSet) => false
+              case Some(b: ProtectedSet) => true
+              case Some(b: PlaySequence) => b.seqIdx == 0
+            }
+          }
+
+          if(firstInSequence) {
+            val baseCard = seenMap(baseCid)
+            assert(baseCard != Card.NULL && baseCard.number > 0)
+            val finesseCard = Card(color=baseCard.color,number=baseCard.number-1)
+
+            //Walk through all the players strictly in between the hinting player and the hinted player
+            //and get all the cards that might be targeted
+            val targetsInBetween = {
+              var cids: List[CardId] = List()
+              var pidInBetween = postGame.curPlayer
+              while(pidInBetween != pid) {
+                finesseTarget(postGame,pidInBetween,baseCard) match {
+                  case None => ()
+                  case Some(cid) => cids = cids :+ cid
+                }
+                pidInBetween = (pidInBetween + 1) % rules.numPlayers
+              }
+              cids
+            }
+
+            //Must have at most 1 target be good - finesse does nothing if multiple good targets.
+            val numGood = targetsInBetween.count { cid => seenMap(cid) != Card.NULL && isGoodForFinesse(postGame,seenMap(cid),baseCard) }
+            if(numGood <= 1) {
+              val goodTarget = targetsInBetween.find { cid => seenMap(cid) != Card.NULL && isGoodForFinesse(postGame,seenMap(cid),baseCard) }
+              goodTarget match {
+                case Some(targetCid) =>
+                  addFinesse(targetCid,baseCid,finesseCard)
+                case None =>
+                  //If there's a card in there we can't see (i.e. it targets us) then do that one.
+                  val unknownTarget = targetsInBetween.find { cid => seenMap(cid) == Card.NULL }
+                  unknownTarget match {
+                    case Some(targetCid) =>
+                      addFinesse(targetCid,baseCid,finesseCard)
+                    case None =>
+                      //No real targets at all - then everyone will assume it hits everyone, so reflect that in beliefs.
+                      targetsInBetween.foreach { targetCid => addFinesse(targetCid,baseCid,finesseCard) }
+                  }
+              }
+            }
+          }
+      }
+    }
+  }
+
   //Handle a hint that we've seen, updating info and beliefmaps.
   //Assumes seenMap is already updated, but nothing else.
   def handleSeenHint(sh: SeenHint, postGame: Game): Unit = {
@@ -1102,8 +1163,6 @@ class HeuristicPlayer private (
       }
     }
 
-    var couldBeFinesse = false
-
     //If this hint is an unknown hint, it does nothing
     if(sh.hint == UnknownHint)
     {}
@@ -1127,18 +1186,20 @@ class HeuristicPlayer private (
       //Split out any cards that should belong to other play sequences
       val hintCidsNotProvable2 = chainAndFilterFuturePlays(hintCidsNotProvable)
       addBelief(PlaySequenceInfo(cids = hintCidsProvable ++ hintCidsNotProvable2))
-      couldBeFinesse = true
+      //Finesses!
+      applyFinesses(pid,postGame,hintCids)
     }
     //Otherwise if all cards in the hint are provably unplayable and not provably junk
     else if(hintCids.forall { cid =>
       val possibles = possibleCards(cid,ck=true)
       provablyNotPlayable(possibles,postGame) && !provablyJunk(possibles,postGame)
     }) {
+      //Finesses! Apply them first so that other things can get chained on to them.
+      applyFinesses(pid,postGame,hintCids)
       //Split out any cards that should belong to other play sequences
       val leftoverCids = chainAndFilterFuturePlays(hintCids)
       //Anything remaining treat as protected
       addBelief(ProtectedSetInfo(cids = leftoverCids))
-      couldBeFinesse = true
     }
     //Otherwise if all cards in the hint are provably junk, then it's a protection hint
     //to all older cards that are not provably junk older than the oldest in the hint
@@ -1150,64 +1211,6 @@ class HeuristicPlayer private (
       }
       val protectedCids = ((oldestHintHid+1) until sh.appliedTo.length).map { hid => postGame.hands(pid)(hid) }
       addBelief(ProtectedSetInfo(cids = protectedCids.toArray))
-    }
-
-    //Finesses!
-    if(HeuristicPlayer.ENABLE_FINESSE && pid != postGame.curPlayer && pid != myPid && couldBeFinesse) {
-      finesseBase(postGame,hintCids) match {
-        case None => ()
-        case Some(baseCid) =>
-          //Finesses can only apply if the baseCid is also first in its play or protected sequence
-          val firstInSequence = {
-            primeBelief(baseCid) match {
-              case None => false
-              case Some(_: JunkSet) => false
-              case Some(b: ProtectedSet) => b.seqIdx == 0
-              case Some(b: PlaySequence) => b.seqIdx == 0
-            }
-          }
-
-          if(firstInSequence) {
-            val baseCard = seenMap(baseCid)
-            assert(baseCard != Card.NULL && baseCard.number > 0)
-            val finesseCard = Card(color=baseCard.color,number=baseCard.number-1)
-
-            //Walk through all the players strictly in between the hinting player and the hinted player
-            //and get all the cards that might be targeted
-            val targetsInBetween = {
-              var cids: List[CardId] = List()
-              var pidInBetween = postGame.curPlayer
-              while(pidInBetween != pid) {
-                finesseTarget(postGame,pidInBetween,baseCard) match {
-                  case None => ()
-                  case Some(cid) => cids = cids :+ cid
-                }
-                pidInBetween = (pidInBetween + 1) % rules.numPlayers
-              }
-              cids
-            }
-
-            //Must have at most 1 target be good - finesse does nothing if multiple good targets.
-            val numGood = targetsInBetween.count { cid => seenMap(cid) != Card.NULL && isGoodForFinesse(postGame,seenMap(cid),baseCard) }
-            if(numGood <= 1) {
-              val goodTarget = targetsInBetween.find { cid => seenMap(cid) != Card.NULL && isGoodForFinesse(postGame,seenMap(cid),baseCard) }
-              goodTarget match {
-                case Some(targetCid) =>
-                  addFinesse(targetCid,baseCid,finesseCard)
-                case None =>
-                  //If there's a card in there we can't see (i.e. it targets us) then do that one.
-                  val unknownTarget = targetsInBetween.find { cid => seenMap(cid) == Card.NULL }
-                  unknownTarget match {
-                    case Some(targetCid) =>
-                      addFinesse(targetCid,baseCid,finesseCard)
-                    case None =>
-                      //No real targets at all - then everyone will assume it hits everyone, so reflect that in beliefs.
-                      targetsInBetween.foreach { targetCid => addFinesse(targetCid,baseCid,finesseCard) }
-                  }
-              }
-            }
-          }
-      }
     }
 
   }
