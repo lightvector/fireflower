@@ -1184,6 +1184,12 @@ class HeuristicPlayer private (
         }
       }
 
+      //TODO this logic doesn't make a lot of sense (why not also use turnsWithPossiblePlayLeft in the
+      //case where we stop early loss)?
+      //But attempts to change it make the bot worse.
+      //Also, the bot still misplays in the endgame by not understanding that everyone must have a playable
+      //if you get to max discards, but adding that understanding also makes things worse...!?
+
       //Maximum number of possible plays left to make in the game, taking into account turnsWithPossiblePlayLeft
       val maxPlaysLeft = {
         if(rules.stopEarlyLoss)
