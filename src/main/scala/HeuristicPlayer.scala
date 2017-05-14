@@ -26,7 +26,7 @@ sealed trait Belief {
   override def toString(): String = {
     this match {
       case PlaySequence(seqIdx,finesseCard,info) =>
-        "PlaySequence(seqIdx=" + seqIdx + ",finesse=" + finesseCard + "cids=(" + info.cids.mkString(",") + "))"
+        "PlaySequence(seqIdx=" + seqIdx + ",finesse=" + finesseCard + ",cids=(" + info.cids.mkString(",") + "))"
       case ProtectedSet(seqIdx,info) =>
         "ProtectedSet(seqIdx=" + seqIdx + ",cids=(" + info.cids.mkString(",") + "))"
       case JunkSet(seqIdx,info) =>
