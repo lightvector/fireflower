@@ -1354,8 +1354,11 @@ class HeuristicPlayer private (
           }
         }
         else {
-          //Simply the number of possible playing turns left in the game
-          game.deck.length + rules.numPlayers
+          //Simply the number of possible cards left in the deck, plus 1 for every player with
+          //any useful card
+          game.deck.length + game.hands.count { hand =>
+            hand.exists { cid => !provablyJunk(possibleCards(cid,ck=false),game) }
+          }
         }
       }
 
@@ -1532,18 +1535,24 @@ class HeuristicPlayer private (
       }
 
       //Re-adjust to be a factor in terms of numPlayed and maxPlaysLeft.
-      val hintScoreFactor = (Math.min(finalExpectedNumPlaysDueToHints, numPlayed + maxPlaysLeft) - numPlayed) / maxPlaysLeft
+      val hintScoreFactor = {
+        if(maxPlaysLeft == 0) 1.0
+        else (Math.min(finalExpectedNumPlaysDueToHints, numPlayed + maxPlaysLeft) - numPlayed) / maxPlaysLeft
+      }
 
       //LIMITED TIME/TURNS -----------------------------------------------------------------------------------------
       //Compute eval factors relating to having a limited amount of time or discards in the game.
 
       //How much of the remaining score are we not getting due to lack of turns
-      val turnsLeftFactor = Math.min(
-        maxPlaysLeft,
-        //0.8 * turnsWithPossiblePlayLeft because we want a slight excess in amount
-        //of turns left to feel comfortable
-        0.8 * turnsWithPossiblePlayLeft
-      ) / maxPlaysLeft
+      val turnsLeftFactor = {
+        if(maxPlaysLeft == 0) 1.0
+        else Math.min(
+          maxPlaysLeft,
+          //0.8 * turnsWithPossiblePlayLeft because we want a slight excess in amount
+          //of turns left to feel comfortable
+          0.8 * turnsWithPossiblePlayLeft
+        ) / maxPlaysLeft
+      }
 
       //DANGER AND CLOGGING -----------------------------------------------------------------------------------------
       //Compute eval factors relating to having clogged hands or having discarded useful cards
@@ -1725,7 +1734,7 @@ class HeuristicPlayer private (
               //Ideally should be now=true, but the problem is that we want to not penalize the case
               //where the next player has no playables but the current player has a playable that makes
               //the next player have a playable!
-              expectedPlays(nextPid, game, now=false, ck=false).isEmpty
+              expectedPlays(nextPid, game, now=false, ck=true).isEmpty
             }
           }
           if(cantProtectDanger) 0.85
@@ -1791,6 +1800,8 @@ class HeuristicPlayer private (
           handClogFactor))
         println("NextTurnLossF: %.3f".format(
           nextTurnLossFactor))
+        println("FewHintsF: %.3f".format(
+          fewHintsFactor))
         println("TotalFactor: %.3f".format(
           totalFactor))
         println("Eval: %s".format(
