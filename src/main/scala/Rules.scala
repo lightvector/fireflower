@@ -37,7 +37,7 @@ abstract class Rules {
 }
 
 object Rules {
-  case class Standard(val numPlayers: Int) extends Rules {
+  case class Standard(val numPlayers: Int, val stopEarlyLoss: Boolean = false) extends Rules {
     if(numPlayers < 2 || numPlayers > 5)
       throw new Exception("Standard rules do not support numPlayers < 2 or > 5")
 
@@ -60,7 +60,6 @@ object Rules {
     val maxScore = 25
     val maxNumber = 4
     val extraHintFromPlayingMax = true
-    val stopEarlyLoss = true
 
     val colorList: List[Color] = List(Red,Yellow,Green,Blue,White)
     val maxColorId = colorList.map(color => color.id).reduceLeft(math.max)

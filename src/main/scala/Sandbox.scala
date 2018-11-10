@@ -19,7 +19,7 @@ object Sandbox {
     }
 
     val _game = Sim.runSingle(
-      rules = Rules.Standard(numPlayers=2),
+      rules = Rules.Standard(numPlayers=2,stopEarlyLoss=true),
       // rules = Rules.Standard(numPlayers=3),
       gameSeed = args(0).toLong,
       playerSeed = 0L,

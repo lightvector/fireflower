@@ -111,7 +111,7 @@ case class SavedState(
 class HeuristicPlayer private (
   //IMMUTABLE-------------------------------------------
   val myPid: Int,
-  val rules: Rules,
+  var rules: Rules,
 
   //Various utility values we compute once and cache
   val maxHints: Int,
@@ -1364,20 +1364,16 @@ class HeuristicPlayer private (
 
       //Maximum number of possible plays left to make in the game, taking into account turnsWithPossiblePlayLeft
       val maxPlaysLeft = {
-        if(rules.stopEarlyLoss)
-          rules.maxScore - game.numPlayed
-        else {
-          //Count up cards that are still useful taking into account dead piles.
-          var usefulCardCount = 0
-          colors.foreach { color =>
-            var number = game.nextPlayable(color.id)
-            while(game.numCardRemaining(Card.arrayIdx(color,number)) > 0 && number <= rules.maxNumber) {
-              usefulCardCount += 1
-              number += 1
-            }
+        //Count up cards that are still useful taking into account dead piles.
+        var usefulCardCount = 0
+        colors.foreach { color =>
+          var number = game.nextPlayable(color.id)
+          while(game.numCardRemaining(Card.arrayIdx(color,number)) > 0 && number <= rules.maxNumber) {
+            usefulCardCount += 1
+            number += 1
           }
-          Math.min(usefulCardCount,turnsWithPossiblePlayLeft)
         }
+        Math.min(usefulCardCount,turnsWithPossiblePlayLeft)
       }.toDouble
 
       //The amount by which we will provably miss the max score by.
@@ -1931,8 +1927,14 @@ class HeuristicPlayer private (
       val playsNow: List[HandId] = expectedPlays(pid, game, now=true, ck=false)
       //Play if possible, randomly among all of them
       //TODO the next player will prefer actually to play what makes future cards playable.
-      if(playsNow.nonEmpty)
-        playsNow.map { hid => (GivePlay(hid),1.0) }
+      if(playsNow.nonEmpty) {
+        if(game.numDiscarded == rules.maxDiscards && game.numHints > 0 && playsNow.length <= 1 &&
+          game.deck.length > 0 &&
+          game.deck.forall { cid => provablyJunk(possibleCards(cid,ck=true),game) })
+          List((GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),1.0))
+        else
+          playsNow.map { hid => (GivePlay(hid),1.0) }
+      }
       //Give a hint if at max hints
       else if(game.numHints >= rules.maxHints)
         List((GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),1.0))
@@ -1940,7 +1942,7 @@ class HeuristicPlayer private (
       else if(game.numHints <= 0) {
         val (mld,dg) = mostLikelyDiscard(pid,game,ck=false)
         //But a discard kills us - so play the first possibly playable card
-        if(rules.stopEarlyLoss && (game.numDiscarded >= rules.maxDiscards || dg <= DISCARD_USEFUL)) {
+        if(game.numDiscarded >= rules.maxDiscards || dg <= DISCARD_USEFUL) {
           val hid = firstPossiblyPlayableHid(game,pid,ck=true).getOrElse(0)
           List((GivePlay(hid),1.0))
         }
@@ -1953,7 +1955,7 @@ class HeuristicPlayer private (
       else {
         //Discard kills us - then give a hint //TODO improve this for the last round
         val (mld,dg) = mostLikelyDiscard(pid,game,ck=false)
-        if(rules.stopEarlyLoss && (game.numDiscarded >= rules.maxDiscards || dg <= DISCARD_USEFUL)) {
+        if(game.numDiscarded >= rules.maxDiscards || dg <= DISCARD_USEFUL) {
           List((GiveHint((pid+1) % game.rules.numPlayers, UnknownHint),1.0))
         }
         else {
@@ -2148,8 +2150,26 @@ class HeuristicPlayer private (
   }
 
   override def getAction(game: Game): GiveAction = {
+    //Hack
+    //If the game would not be done under rules that stop early on provable loss, then play as if that were the case.
+    var maybeModifiedGame = game
+    val origRules = rules
+    if(!maybeModifiedGame.rules.stopEarlyLoss) {
+      maybeModifiedGame.rules match {
+        case (gameRules: Rules.Standard) =>
+          maybeModifiedGame = Game(game)
+          maybeModifiedGame.rules = gameRules.copy(stopEarlyLoss = true)
+          rules = maybeModifiedGame.rules
+          if(maybeModifiedGame.isDone()) {
+            maybeModifiedGame = game
+            rules = origRules
+          }
+      }
+    }
+
     maybePrintAllBeliefs(game)
-    val (action,_eval) = doGetAction(game,cDepth=0,rDepth=2)
+    val (action,_eval) = doGetAction(maybeModifiedGame,cDepth=0,rDepth=2)
+    rules = origRules
     action
   }
 

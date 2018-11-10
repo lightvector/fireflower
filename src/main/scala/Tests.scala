@@ -116,6 +116,28 @@ object PlayerTests {
     println("Average Utility: " + avgUtility)
   }
 
+  def printScoreSummaryBombZero(rules: Rules, games: List[Game]) = {
+    val scoreTable = (0 to rules.maxScore).map { score =>
+      (score,games.count(game => (if (game.numBombs > rules.maxBombs) 0 else game.numPlayed) == score))
+    }
+    val numGames = games.length
+    var cumulativeCount = 0
+    scoreTable.foreach { case (score,count) =>
+      println("Score %2d  Games: %2d  Percent: %4.1f%%  Cum: %4.1f%%".format(
+        score, count, count.toDouble * 100.0 / numGames, (numGames - cumulativeCount.toDouble) * 100.0 / numGames
+      ))
+      cumulativeCount += count
+    }
+    val avgScore = scoreTable.foldLeft(0) { case (acc,(score,count)) =>
+      acc + count * score
+    }.toDouble / numGames
+    val avgUtility = scoreTable.foldLeft(0) { case (acc,(score,count)) =>
+      acc + count * (if(score == rules.maxScore) score * 4 else score * 2)
+    }.toDouble / numGames
+    println("Average Score: " + avgScore)
+    println("Average Utility: " + avgUtility)
+  }
+
   /*
    Results:
 

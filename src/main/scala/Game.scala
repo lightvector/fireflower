@@ -89,7 +89,7 @@ object Game {
 }
 
 class Game private (
-  val rules: Rules,
+  var rules: Rules,
   var turnNumber: Int,
   var numHints: Int,
   var numBombs: Int,
@@ -285,9 +285,9 @@ class Game private (
   def isDone(): Boolean = {
     numBombs > rules.maxBombs ||
     finalTurnsLeft == 0 ||
+    numPlayed >= rules.maxScore ||
     (rules.stopEarlyLoss && (
       numDiscarded > rules.maxDiscards ||
-        numPlayed >= rules.maxScore ||
         discarded.exists { cid =>
           val card = seenMap(cid)
           card.number >= nextPlayable(card.color.id) && numCardRemaining(card.arrayIdx) == 0
