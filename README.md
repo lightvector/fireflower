@@ -4,12 +4,12 @@
 Fireflower is a bot-in-progress that plays (some variations of) the game Hanabi. Right now, in early stages and focusing mainly on two-player, and mostly focusing on playing to win rather than maximizing score.
 
 Currently (+/- 2 stdevs), assuming that players keep their points upon bombing out rather than being scored as 0:
-* Wins 2-player 56.5% +/- 3.1% of the time (based on 1000 games), with an average score of 23.54 +/- 0.17
-* Wins 3-player 40.2% +/- 3.1% of the time (based on 1000 games), with an average score of 22.95 +/- 0.21
-* Wins 4-player 26.5% +/- 2.8% of the time (based on 1000 games), with an average score of 22.83 +/- 0.17
+* Wins 2-player 52.6% +/- 0.6% of the time (based on 25000 games), with an average score of 23.37 +/- 0.04
+* Wins 3-player 40.2% +/- 3.1% of the time (based on  1000 games), with an average score of 22.95 +/- 0.21
+* Wins 4-player 26.5% +/- 2.8% of the time (based on  1000 games), with an average score of 22.83 +/- 0.17
 
-And assuming that bombing out is counted as 0 on those same games:
-* 2-player average score was 22.79 +/- 0.33 (45 games bombed)
+And assuming that bombing out is counted as 0 points on those same games:
+* 2-player average score was 22.56 +/- 0.07 (1226 games bombed)
 * 3-player average score was 21.05 +/- 0.49 (118 games bombed)
 * 4-player average score was 21.78 +/- 0.38 (67 games bombed)
 
