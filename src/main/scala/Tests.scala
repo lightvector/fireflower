@@ -17,14 +17,14 @@ object PlayerTests {
     }
     println("NumGames=" + numGames)
 
-    runTests(prefix="",salt="e",numGames=numGames, numPlayers=numPlayers)
+    runTests(prefix="",salt="g",numGames=numGames, numPlayers=numPlayers)
   }
 
   def runTests(prefix: String, salt: String, numGames: Int, numPlayers: Option[Int]): Unit = {
     val start = System.nanoTime()
-    val rules2p = Rules.Standard(numPlayers=2)
-    val rules3p = Rules.Standard(numPlayers=3)
-    val rules4p = Rules.Standard(numPlayers=4)
+    val rules2p = Rules.Standard(numPlayers=2,stopEarlyLoss=false)
+    val rules3p = Rules.Standard(numPlayers=3,stopEarlyLoss=false)
+    val rules4p = Rules.Standard(numPlayers=4,stopEarlyLoss=false)
 
     def makeRunSeed(name:String): Long = {
       RandUtils.sha256Long(RandUtils.sha256Long(name) + salt)
@@ -84,12 +84,15 @@ object PlayerTests {
     println("")
     println(name2p + ":")
     printScoreSummary(rules2p,games2p)
+    printScoreSummaryBombZero(rules2p,games2p)
     println("")
     println(name3p + ":")
     printScoreSummary(rules3p,games3p)
+    printScoreSummaryBombZero(rules3p,games3p)
     println("")
     println(name4p + ":")
     printScoreSummary(rules4p,games4p)
+    printScoreSummaryBombZero(rules4p,games4p)
     println("")
     println("Time: " + (end-start).toDouble / 1.0e9)
   }
