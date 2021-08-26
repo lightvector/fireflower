@@ -17,7 +17,7 @@ import RichImplicits._
 object Game {
 
   //Construct a Game from the given rules and a seed for shuffling the deck.
-  def apply(rules: Rules, seed: Long): Game = {
+  def apply(rules: Rules, seed: Long, curPlayer: PlayerId): Game = {
     assert(rules.numPlayers >= 2)
     assert(rules.handSize > 0)
     assert(rules.deckSize >= rules.numPlayers * rules.handSize)
@@ -52,7 +52,7 @@ object Game {
       played = List(),
       discarded = List(),
       deck = (0 to (rules.deckSize-1)).toList,
-      curPlayer = 0,
+      curPlayer = curPlayer,
       finalTurnsLeft = -1,
       hands = Array.fill(rules.numPlayers)(Hand(rules.handSize)),
       nextPlayable = nextPlayable,
@@ -60,6 +60,10 @@ object Game {
       revHistory = List(),
       debugPath = None
     )
+  }
+
+  def apply(rules: Rules, seed: Long): Game = {
+    apply(rules, seed, 0)
   }
 
   //Constuct a copy of this game that can be modified separately from the original.

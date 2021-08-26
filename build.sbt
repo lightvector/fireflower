@@ -4,11 +4,18 @@ lazy val root = (project in file(".")).
   settings(
     name := "Fireflower",
     version := "1.0",
-    scalaVersion := "2.11.8",
+    scalaVersion := "2.11.12",
 
     fork in run := true,
 
-    mainClass in assembly := Some("fireflower.PlayerTests"),
+    mainClass in assembly := Some("fireflower.ForHanabiLive"),
+    assemblyMergeStrategy in assembly := {
+      case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+      case x => MergeStrategy.first
+    },
+
+    libraryDependencies += "org.glassfish.jaxb" % "jaxb-runtime" % "2.3.1",
+    libraryDependencies += "com.typesafe.play" %% "play-json" % "2.7.0",
 
     scalacOptions ++= Seq(
       "-deprecation",
